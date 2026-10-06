@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+/* Savora design tokens. Values mirror the Figma variables (light/* and dark/*).
+   Light is the default; dark applies from the OS setting unless the user picked a theme,
+   and an explicit data-theme on <html> always wins. */
+:root {
+  --bg: #f5f5f5;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --ink: #242424;
+  --ink-2: #454545;
+  --muted: #757575;
+  --line: #e7e7e7;
+  --line-2: #d8d8d8;
+  --brand: #db1a1a;
+  --brand-hover: #b81414;
+  --brand-soft: #fdeded;
+  --gold: #d9a441;
+  --gold-soft: #faf1e0;
+  --ok: #2e7d53;
+  --ok-soft: #e9f3ed;
+  --shadow-card: 0 1px 2px rgb(36 36 36 / 0.04), 0 10px 30px rgb(36 36 36 / 0.06);
+  --shadow-raised: 0 2px 6px rgb(36 36 36 / 0.06), 0 18px 46px rgb(36 36 36 / 0.1);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141414;
+    --surface: #1d1d1d;
+    --surface-2: #232323;
+    --ink: #f2f2f2;
+    --ink-2: #cfcfcf;
+    --muted: #9a9a9a;
+    --line: #2d2d2d;
+    --line-2: #3a3a3a;
+    --brand: #ff4d4d;
+    --brand-hover: #ff6e6e;
+    --brand-soft: #2c1717;
+    --gold: #e8ba63;
+    --gold-soft: #2b2317;
+    --ok: #5fbe8c;
+    --ok-soft: #17271e;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 30px rgb(0 0 0 / 0.35);
+    --shadow-raised: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 46px rgb(0 0 0 / 0.5);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #141414;
+  --surface: #1d1d1d;
+  --surface-2: #232323;
+  --ink: #f2f2f2;
+  --ink-2: #cfcfcf;
+  --muted: #9a9a9a;
+  --line: #2d2d2d;
+  --line-2: #3a3a3a;
+  --brand: #ff4d4d;
+  --brand-hover: #ff6e6e;
+  --brand-soft: #2c1717;
+  --gold: #e8ba63;
+  --gold-soft: #2b2317;
+  --ok: #5fbe8c;
+  --ok-soft: #17271e;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 30px rgb(0 0 0 / 0.35);
+  --shadow-raised: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 46px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+
+  /* Poppins carries Latin; Arabic glyphs fall through to Tajawal. */
+  --font-sans: var(--font-poppins), var(--font-tajawal), system-ui, sans-serif;
+  --font-arabic: var(--font-tajawal), var(--font-poppins), system-ui, sans-serif;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
+  /* Type scale (role names match the Figma text styles). */
+  --text-display: 64px;
+  --text-display--line-height: 1.08;
+  --text-heading-xl: 44px;
+  --text-heading-xl--line-height: 1.14;
+  --text-heading-l: 32px;
+  --text-heading-l--line-height: 1.2;
+  --text-heading-m: 24px;
+  --text-heading-m--line-height: 1.3;
+  --text-heading-s: 20px;
+  --text-heading-s--line-height: 1.35;
+  --text-title-m: 16px;
+  --text-title-m--line-height: 1.45;
+  --text-title-s: 14px;
+  --text-title-s--line-height: 1.45;
+  --text-body-l: 15px;
+  --text-body-l--line-height: 1.65;
+  --text-body-m: 14px;
+  --text-body-m--line-height: 1.6;
+  --text-body-s: 13px;
+  --text-body-s--line-height: 1.55;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.5;
+  --text-overline: 11px;
+  --text-overline--line-height: 1.35;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Arabic never takes letter-spacing or capitals, and needs room for its marks. */
+:lang(ar) {
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+[dir="rtl"] body {
+  font-family: var(--font-arabic);
+  line-height: 1.6;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Maps (Leaflet) ---------- */
+.savora-map .leaflet-container {
+  font-family: inherit;
+  background: var(--surface-2);
+}
+.savora-map .leaflet-control-attribution {
+  font-size: 10px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--muted);
+}
+.savora-map .leaflet-control-attribution a {
+  color: var(--ink-2);
+}
+.savora-map-pin {
+  background: none;
+  border: 0;
+}
+.savora-map-other {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.savora-map-other .dot {
+  width: 12px;
+  height: 12px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #454545;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2);
+}
+.savora-map-other .label {
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: #fff;
+  color: #242424;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Dark mode: darken the light tiles rather than load a second tile set. */
+:root[data-theme="dark"] .savora-map .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.6);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .savora-map .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.6);
+  }
+}

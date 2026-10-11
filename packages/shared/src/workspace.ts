@@ -36,6 +36,8 @@ export type OrganizationSummary = {
 export type Me = {
   user: { id: string; email: string; name: string | null; locale: string; staff: boolean };
   organizations: OrganizationSummary[];
+  /** Server capabilities: AI needs a key in the API's environment. */
+  features: { ai: boolean };
 };
 
 export type Overview = {
@@ -46,7 +48,4 @@ export type Overview = {
   stats: { locations: number; live: number; menuItems: number; totalScans: number };
 };
 
-/** Fills {placeholders} in a dictionary string: fill('{n} scans', { n: 3 }) -> '3 scans'. */
-export function fill(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
-}
+export { fill } from './format';

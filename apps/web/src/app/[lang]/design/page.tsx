@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
 import { LocaleSwitch } from '@/components/locale-switch';
 import { ThemeSwitch } from '@/components/theme-switch';
@@ -15,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 const SWATCHES = [
-  ['brand', 'bg-brand'],
+  ['brand', 'bg-brand-fill'],
   ['gold', 'bg-gold'],
   ['ok', 'bg-ok'],
   ['ink', 'bg-ink'],
@@ -44,6 +45,8 @@ const DEMO = {
 
 /** Phase 0 showcase: every token and component, in the current theme and language. */
 export default async function DesignPage() {
+  // A development reference for the design system; not part of the product.
+  if (process.env.NODE_ENV === 'production') notFound();
   const t = await getDictionary();
   const locale = await getLocale();
   const d = t.design;

@@ -4,7 +4,7 @@ import { cx } from '@/lib/cx';
 type Tone = 'ok' | 'gold' | 'brand' | 'neutral';
 const tones: Record<Tone, string> = {
   ok: 'bg-ok-soft text-ok',
-  gold: 'bg-gold-soft text-gold',
+  gold: 'bg-gold-soft text-gold-ink',
   brand: 'bg-brand-soft text-brand',
   neutral: 'border border-line bg-surface-2 text-muted',
 };

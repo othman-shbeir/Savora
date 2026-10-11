@@ -41,7 +41,7 @@ export function VerifyLink({ t, locale }: { t: Dictionary['auth']; locale: Local
     <div role="alert">
       <h1 className="text-heading-m font-semibold">{t.expiredTitle}</h1>
       <p className="mt-2 text-body-m text-muted">{t.expiredBody}</p>
-      <Link href={`/${locale}/sign-in`} className="mt-6 inline-flex h-11 items-center rounded-xl bg-brand px-5 text-body-s font-semibold text-white">
+      <Link href={`/${locale}/sign-in`} className="mt-6 inline-flex h-11 items-center rounded-xl bg-brand-fill px-5 text-body-s font-semibold text-white">
         {t.backToSignIn}
       </Link>
     </div>

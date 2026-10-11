@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { addMonth, can, monthlyCents, pausedLocations, planFor, settle, usd, type Subscription } from './plans';
+import { afterEach, describe, expect, it } from 'vitest';
+import { addMonth, can, locationLimit, monthlyCents, pausedLocations, planFor, plansEnabled, settle, usd, type Subscription } from './plans';
 
 describe('plans', () => {
   it('unlocks features by plan', () => {
@@ -46,5 +46,32 @@ describe('subscription timeline', () => {
   it('adds calendar months, clamping short months', () => {
     expect(addMonth(new Date('2026-10-15T09:00:00Z')).toISOString()).toBe('2026-11-15T09:00:00.000Z');
     expect(addMonth(new Date('2027-01-31T00:00:00Z')).toISOString()).toBe('2027-02-28T00:00:00.000Z');
+  });
+});
+
+describe('switching plans off for testing', () => {
+  const setting = (v: string | undefined) => {
+    if (v === undefined) delete process.env.NEXT_PUBLIC_PLANS_ENABLED;
+    else process.env.NEXT_PUBLIC_PLANS_ENABLED = v;
+  };
+  afterEach(() => setting(undefined));
+
+  it('is on unless explicitly switched off', () => {
+    setting(undefined);
+    expect(plansEnabled()).toBe(true);
+    expect(can('starter', 'analytics')).toBe(false);
+    setting('true');
+    expect(plansEnabled()).toBe(true);
+  });
+  it('unlocks every feature, removes location limits and pauses nothing when off', () => {
+    setting('false');
+    expect(plansEnabled()).toBe(false);
+    expect(can('starter', 'analytics')).toBe(true);
+    expect(can('growth', 'sharedTheme')).toBe(true);
+    expect(locationLimit('starter')).toBe(Number.POSITIVE_INFINITY);
+    const locs = [1, 2, 3].map((i) => ({ id: `l${i}`, createdAt: new Date(2026, 0, i) }));
+    expect(pausedLocations(locs, 'starter').size).toBe(0);
+    // Upgrade prompts still name the real plan.
+    expect(planFor('sharedTheme')).toBe('multi_location');
   });
 });

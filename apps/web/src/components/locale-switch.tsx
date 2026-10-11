@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LOCALES, type Locale } from '@savora/shared';
+// The sub-path keeps the validation library out of every public page's bundle.
+import { LOCALES, type Locale } from '@savora/shared/locale';
 import { cx } from '@/lib/cx';
 
 const NAMES: Record<Locale, string> = { en: 'EN', ar: 'عربي' };

@@ -9,15 +9,21 @@
   --surface-2: #fafafa;
   --ink: #242424;
   --ink-2: #454545;
-  --muted: #757575;
+  --muted: #6b6b6b;
   --line: #e7e7e7;
   --line-2: #d8d8d8;
   --brand: #db1a1a;
   --brand-hover: #b81414;
-  --brand-soft: #fdeded;
+  --brand-soft: #fef3f3;
+  /* Red behind white text (buttons, badges). Same as --brand in light mode; in dark mode --brand is
+     lightened for red text on dark surfaces, which white text can't sit on. */
+  --brand-fill: #db1a1a;
+  --brand-fill-hover: #b81414;
   --gold: #d9a441;
   --gold-soft: #faf1e0;
-  --ok: #2e7d53;
+  /* Gold for text on light surfaces; the brand gold is for fills, icons and dark sections. */
+  --gold-ink: #8a6416;
+  --ok: #2b774f;
   --ok-soft: #e9f3ed;
   --shadow-card: 0 1px 2px rgb(36 36 36 / 0.04), 0 10px 30px rgb(36 36 36 / 0.06);
   --shadow-raised: 0 2px 6px rgb(36 36 36 / 0.06), 0 18px 46px rgb(36 36 36 / 0.1);
@@ -37,8 +43,11 @@
     --brand: #ff4d4d;
     --brand-hover: #ff6e6e;
     --brand-soft: #2c1717;
+    --brand-fill: #db1a1a;
+    --brand-fill-hover: #c41616;
     --gold: #e8ba63;
     --gold-soft: #2b2317;
+    --gold-ink: #e8ba63;
     --ok: #5fbe8c;
     --ok-soft: #17271e;
     --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 30px rgb(0 0 0 / 0.35);
@@ -59,8 +68,11 @@
   --brand: #ff4d4d;
   --brand-hover: #ff6e6e;
   --brand-soft: #2c1717;
+  --brand-fill: #db1a1a;
+  --brand-fill-hover: #c41616;
   --gold: #e8ba63;
   --gold-soft: #2b2317;
+  --gold-ink: #e8ba63;
   --ok: #5fbe8c;
   --ok-soft: #17271e;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35), 0 10px 30px rgb(0 0 0 / 0.35);
@@ -80,8 +92,11 @@
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
   --color-brand-soft: var(--brand-soft);
+  --color-brand-fill: var(--brand-fill);
+  --color-brand-fill-hover: var(--brand-fill-hover);
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
+  --color-gold-ink: var(--gold-ink);
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
 
@@ -134,6 +149,56 @@ body {
 [dir="rtl"] body {
   font-family: var(--font-arabic);
   line-height: 1.6;
+}
+
+/* The Virtual trial's guided tour drifts across each scene. */
+@keyframes tour-drift {
+  from {
+    transform: var(--from);
+  }
+  to {
+    transform: var(--to);
+  }
+}
+
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Landing page: content rises in; the sample menu card floats. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1.2deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(0.6deg);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Guest menu themes ---------- */
+/* Latin headings take a serif; Arabic has none here, so it falls through to Tajawal. */
+[data-menu-font="serif"] :is(h1, h2, h3) {
+  font-family: ui-serif, Georgia, "Times New Roman", var(--font-tajawal), serif;
+  letter-spacing: 0;
+}
+[data-bold-prices] .menu-price {
+  font-weight: 700;
+  font-size: 14px;
 }
 
 :focus-visible {

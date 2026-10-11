@@ -34,8 +34,8 @@ export function diskStore(dir = path.join(homedir(), '.savora', 'media')): Media
 export class NotAnImage extends Error {}
 
 /** Normalises an upload: honours the camera's rotation, strips metadata (including GPS), and writes
- *  a 1600px WebP for the guest menu plus a 480px square thumbnail for lists. */
-export async function processImage(input: Buffer) {
+ *  a WebP for the guest menu (1600px, or larger for tour scenes) plus a 480px square thumbnail. */
+export async function processImage(input: Buffer, maxSize = 1600) {
   let meta: Metadata;
   try {
     meta = await sharp(input, { limitInputPixels: 50_000_000 }).metadata();
@@ -45,7 +45,7 @@ export async function processImage(input: Buffer) {
   if (!meta.format || !['jpeg', 'png', 'webp', 'heif', 'avif', 'gif', 'tiff'].includes(meta.format)) throw new NotAnImage();
   const base = () => sharp(input, { limitInputPixels: 50_000_000 }).rotate();
   try {
-    const { data: full, info } = await base().resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer({ resolveWithObject: true });
+    const { data: full, info } = await base().resize({ width: maxSize, height: maxSize, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer({ resolveWithObject: true });
     const thumb = await base().resize({ width: 480, height: 480, fit: 'cover', position: sharp.strategy.attention }).webp({ quality: 78 }).toBuffer();
     return { full, thumb, width: info.width, height: info.height };
   } catch {

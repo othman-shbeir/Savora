@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { fill, GRACE_DAYS, monthlyCents, PLANS, rank, usd, type BillingOverview, type Locale, type PlanId } from '@savora/shared';
+import { fill, GRACE_DAYS, monthlyCents, plansEnabled, PLANS, rank, usd, type BillingOverview, type Locale, type PlanId } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { cx } from '@/lib/cx';
 import { planName } from '@/lib/plan-name';
@@ -122,7 +122,7 @@ export function BillingScreen({ b, t, locale, orgId, userName }: { b: BillingOve
       unit: t.perLocationMonth,
       desc: t.descGrowth,
       feats: t.featGrowth,
-      badge: b.plan === 'growth' ? <Badge tone="ok">{t.badgeCurrent}</Badge> : <span className="rounded-full bg-brand px-2.5 py-1 text-[11px] font-semibold text-white">{t.badgeGrowth}</span>,
+      badge: b.plan === 'growth' ? <Badge tone="ok">{t.badgeCurrent}</Badge> : <span className="rounded-full bg-brand-fill px-2.5 py-1 text-[11px] font-semibold text-white">{t.badgeGrowth}</span>,
       tone: 'bg-[rgb(255_77_77/0.18)] text-[#ff6b6b]',
       note: fill(t.growthLimit, { total: usd(monthlyCents('growth', b.locations)) }),
     },
@@ -139,6 +139,12 @@ export function BillingScreen({ b, t, locale, orgId, userName }: { b: BillingOve
 
   return (
     <div>
+      {!plansEnabled() && (
+        <p role="status" className="mb-6 rounded-2xl border border-gold/40 bg-gold-soft px-5 py-4 text-body-s">
+          <strong className="block font-semibold">{t.plansOffTitle}</strong>
+          {t.plansOffBody}
+        </p>
+      )}
       <header className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <Overline>{t.overline}</Overline>
@@ -172,7 +178,7 @@ export function BillingScreen({ b, t, locale, orgId, userName }: { b: BillingOve
             <p className="mt-0.5 text-heading-s font-semibold">{planName(b.plan, t)}</p>
           </div>
         </div>
-        <ul className="flex min-w-0 flex-1 flex-wrap gap-2 border-line md:border-s md:ps-6">
+        <ul className="flex min-w-0 flex-1 basis-full flex-wrap gap-2 border-line md:basis-0 md:border-s md:ps-6">
           {chips.map((c) => (
             <li key={c} className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-caption text-ink-2">
               <Icon d={ICON.check} size={12} className="text-ok" />

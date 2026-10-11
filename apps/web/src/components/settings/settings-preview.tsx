@@ -79,13 +79,13 @@ export function GuestPreview({ d, t, locale }: { d: PreviewData; t: Dictionary; 
             <span aria-hidden className="absolute start-1/2 top-1.5 h-4 w-16 -translate-x-1/2 rounded-full bg-[#1a1a1a] rtl:translate-x-1/2" />
           </div>
           <div className="relative -mt-6 px-3.5 pb-3.5">
-            <span className="relative grid size-12 place-items-center overflow-hidden rounded-xl bg-brand text-title-m font-bold text-white ring-[3px] ring-surface">
+            <span className="relative grid size-12 place-items-center overflow-hidden rounded-xl bg-brand-fill text-title-m font-bold text-white ring-[3px] ring-surface">
               {d.logo ? <img src={d.logo.url} alt="" className="absolute inset-0 size-full bg-white object-contain p-0.5" /> : name.slice(0, 1)}
             </span>
             <p className="mt-2 text-title-m leading-tight font-semibold">{name}</p>
             <p className="mt-0.5 truncate text-[10px] text-muted">{[brand, street].filter(Boolean).join(' · ')}</p>
             {status && (
-              <p className={cx('mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold', status.open ? 'bg-ok-soft text-ok' : 'bg-gold-soft text-gold')}>
+              <p className={cx('mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold', status.open ? 'bg-ok-soft text-ok' : 'bg-gold-soft text-gold-ink')}>
                 <span aria-hidden className="size-1.5 rounded-full bg-current" />
                 {status.text}
               </p>
@@ -96,7 +96,7 @@ export function GuestPreview({ d, t, locale }: { d: PreviewData; t: Dictionary; 
                   key={a.key}
                   className={cx(
                     'grid justify-items-center gap-0.5 rounded-lg border py-1.5 text-[9px] font-semibold',
-                    a.on ? 'border-line text-brand' : 'border-dashed border-line text-muted opacity-50',
+                    a.on ? 'border-line text-brand' : 'border-dashed border-line-2 text-muted',
                   )}
                 >
                   <span aria-hidden className="text-[12px] leading-none">
@@ -119,7 +119,7 @@ export function GuestPreview({ d, t, locale }: { d: PreviewData; t: Dictionary; 
             {d.showMap && d.hasPin && (
               <div className="mt-3 overflow-hidden rounded-xl border border-line">
                 <div aria-hidden className="relative h-14 bg-[repeating-linear-gradient(35deg,var(--surface-2)_0_10px,var(--line)_10px_11px)]">
-                  <span className="absolute start-1/2 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand shadow rtl:translate-x-1/2" />
+                  <span className="absolute start-1/2 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand-fill shadow rtl:translate-x-1/2" />
                 </div>
                 <div className="px-2.5 py-1.5">
                   <p className="truncate text-[9px] font-semibold">{street || name}</p>

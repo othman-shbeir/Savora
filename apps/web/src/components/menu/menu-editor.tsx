@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { fill, formatPrice, parsePastedMenu, type ImportPayload, type Locale, type MenuDraft, type MenuItem } from '@savora/shared';
@@ -24,16 +25,30 @@ type Open =
   | { kind: 'item'; item: MenuItem | null; categoryId?: string }
   | { kind: 'delete'; item: MenuItem }
   | { kind: 'categories' }
-  | { kind: 'review'; parsed: ImportPayload };
+  | { kind: 'review'; parsed: ImportPayload; notes?: string[] };
 
 /** The Menu editor. Every change saves straight to the draft and the page re-reads it from the API,
  *  so what is on screen is always what is stored. */
-export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: EditorText; locale: Locale; brand: { name: string; tagline: string | null } }) {
+export function MenuEditor({
+  draft,
+  t,
+  locale,
+  brand,
+  reader,
+}: {
+  draft: MenuDraft;
+  t: EditorText;
+  locale: Locale;
+  brand: { name: string; tagline: string | null };
+  /** Reading a menu from photos: in the plan, and switched on on the server. */
+  reader: { allowed: boolean; ai: boolean };
+}) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
   const [open, setOpen] = useState<Open>({ kind: 'none' });
   const [filter, setFilter] = useState<string>('all');
   const [paste, setPaste] = useState('');
+  const [reading, setReading] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -67,6 +82,35 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
     setOpen({ kind: 'review', parsed });
   }
 
+  /** Sends photos or a PDF to be read, then shows the result in the review dialog. */
+  async function read(files: File[]) {
+    if (!files.length) return;
+    if (files.length > 5) return say(t.readTooLarge, 'error');
+    if (files.filter((f) => f.type === 'application/pdf').length > 1) return say(t.readOnePdf, 'error');
+    const body = new FormData();
+    for (const f of files) body.append('file', f);
+    setReading(true);
+    const res = await fetch(`/api/locations/${location.id}/menu/read`, { method: 'POST', body }).catch(() => null);
+    setReading(false);
+    const data = res?.headers.get('content-type')?.includes('json') ? await res.json() : null;
+    if (!res?.ok) {
+      const code = data?.error;
+      const errors: Record<string, string> = {
+        ai_unavailable: t.readUnavailable,
+        nothing_found: t.readNothing,
+        not_a_menu_file: t.readNotMenu,
+        too_large: t.readTooLarge,
+        one_pdf: t.readOnePdf,
+        ai_busy: t.readBusy,
+        ai_declined: t.readDeclined,
+        too_long: t.readTooLarge,
+      };
+      return say(res?.status === 429 ? t.readLimit : (errors[code] ?? t.failed), 'error');
+    }
+    const notes: string[] = [...(data.currencyMismatch ? [fill(t.readCurrency, { currency: data.currencyMismatch })] : []), ...(data.notes ?? [])];
+    setOpen({ kind: 'review', parsed: { categories: data.categories }, notes });
+  }
+
   const first = categories.find((c) => c.items.length);
   const firstItem = first?.items[0];
 
@@ -86,8 +130,8 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
             <p className="text-[11px] text-[#8e8e8e]">{t.reviewNote}</p>
           </div>
           <div className="mt-3 grid gap-2.5 md:grid-cols-[1fr_1.15fr_0.95fr]">
-            {/* 01 — arrives with AI import (Phase 7); shown so owners know it's coming. */}
-            <div aria-disabled className="flex min-h-[200px] flex-col items-start rounded-[13px] border border-dashed border-white/20 bg-white/[0.03] p-4">
+            {/* 01 — read a photo or PDF with AI (Growth). */}
+            <UploadCard reader={reader} reading={reading} t={t} locale={locale} onFiles={read}>
               <span className="font-mono text-[10px] font-bold text-[#b9b9b9]">01</span>
               <span aria-hidden className="mt-4 grid size-9 place-items-center rounded-[10px] bg-white/10">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#d9d9d9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -97,9 +141,11 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
                 </svg>
               </span>
               <strong className="mt-3.5 text-caption font-semibold text-[#d9d9d9]">{t.uploadTitle}</strong>
-              <small className="mt-1.5 text-[11px] leading-snug text-[#9d9d9d]">{t.uploadBody}</small>
-              <span className="mt-auto rounded-full bg-gold/15 px-2.5 py-1 text-[10px] font-semibold text-gold">{t.uploadSoon}</span>
-            </div>
+              <small className="mt-1.5 text-[11px] leading-snug text-[#9d9d9d]">{reader.allowed && reader.ai ? t.uploadHint : t.uploadBody}</small>
+              <span className={cx('mt-auto rounded-full px-2.5 py-1 text-[10px] font-semibold', reader.allowed && reader.ai ? 'bg-gold text-[#242424]' : 'bg-gold/15 text-gold')}>
+                {!reader.allowed ? t.uploadGrowth : !reader.ai ? t.uploadOff : reading ? t.uploadReading : t.uploadCta}
+              </span>
+            </UploadCard>
 
             {/* 02 — paste */}
             <form
@@ -131,14 +177,14 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
             <button
               type="button"
               onClick={() => setOpen({ kind: 'item', item: null })}
-              className="group flex min-h-[200px] flex-col items-start rounded-[13px] bg-brand p-4 text-start text-white transition-transform hover:-translate-y-0.5"
+              className="group flex min-h-[200px] flex-col items-start rounded-[13px] bg-brand-fill p-4 text-start text-white transition-transform hover:-translate-y-0.5"
             >
-              <span className="font-mono text-[10px] font-bold opacity-85">03</span>
+              <span className="font-mono text-[10px] font-bold">03</span>
               <span aria-hidden className="mt-4 grid size-9 place-items-center rounded-[10px] bg-white/20 text-[20px] leading-none font-light">
                 +
               </span>
               <strong className="mt-3.5 text-caption font-semibold">{t.blankTitle}</strong>
-              <small className="mt-1.5 text-[11px] leading-snug opacity-85">{t.blankBody}</small>
+              <small className="mt-1.5 text-[11px] leading-snug">{t.blankBody}</small>
               <span className="mt-auto pt-3 text-[11px] font-semibold">
                 {items.length ? t.blankCtaFilled : t.blankCta} <span aria-hidden>{locale === 'ar' ? '←' : '→'}</span>
               </span>
@@ -151,7 +197,7 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
           <h3 className="mt-2.5 max-w-[260px] text-heading-m leading-[1.1] font-bold tracking-[-0.03em] text-[#f5f5f5]">{t.previewTitle}</h3>
           <p className="mt-2.5 max-w-[260px] text-caption text-[#9d9d9d]">{t.previewBody}</p>
           <div className="mt-6 max-w-[320px] -rotate-2 rounded-xl bg-white p-5 text-[#242424] shadow-[0_18px_40px_rgb(0_0_0/0.35)] transition-transform duration-300 hover:rotate-0">
-            <div className="flex items-center justify-between font-mono text-[9px] tracking-[0.08em] text-[#8a8a8a] uppercase">
+            <div className="flex items-center justify-between font-mono text-[9px] tracking-[0.08em] text-[#6b6b6b] uppercase">
               <span aria-hidden className="grid size-6 place-items-center rounded-full border border-[#db1a1a] font-sans text-[11px] font-bold text-[#db1a1a]">
                 {brand.name.slice(0, 1)}
               </span>
@@ -159,7 +205,7 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
             </div>
             <div className="py-3.5 text-center">
               <strong className="block text-heading-s font-bold tracking-[-0.02em]">{brand.name}</strong>
-              {brand.tagline && <small className="mt-0.5 block text-[10px] text-[#8a8a8a]">{brand.tagline}</small>}
+              {brand.tagline && <small className="mt-0.5 block text-[10px] text-[#6b6b6b]">{brand.tagline}</small>}
             </div>
             <div className="h-px bg-[#eaeaea]" />
             {first && firstItem ? (
@@ -167,7 +213,7 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
                 <div className="mt-3.5 flex justify-between gap-3 font-mono text-[9px] font-bold tracking-[0.09em] text-[#db1a1a] uppercase">
                   {/* Monospace caps suit Latin labels; Arabic needs its own joined letterforms. */}
                   <span className={locale === 'ar' ? 'font-sans tracking-normal' : undefined}>{primaryName(first, locale)}</span>
-                  {secondaryName(first, locale) && <b className="font-sans font-medium text-[#9a9a9a] normal-case">{secondaryName(first, locale)}</b>}
+                  {secondaryName(first, locale) && <b className="font-sans font-medium text-[#6b6b6b] normal-case">{secondaryName(first, locale)}</b>}
                 </div>
                 <div className="mt-2 flex justify-between gap-3 text-caption">
                   <span className="truncate">{primaryName(firstItem, locale)}</span>
@@ -175,7 +221,7 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
                 </div>
               </>
             ) : (
-              <p className="mt-3.5 text-center text-[11px] text-[#8a8a8a]">{t.previewEmpty}</p>
+              <p className="mt-3.5 text-center text-[11px] text-[#6b6b6b]">{t.previewEmpty}</p>
             )}
             <div aria-hidden className="mt-4 flex gap-1">
               <span className="h-0.5 w-10 bg-[#db1a1a]" />
@@ -231,7 +277,7 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
                   activeFilter === c.id ? 'border-ink bg-ink text-surface' : 'border-line-2 bg-surface text-ink-2 hover:border-ink',
                 )}
               >
-                {c.label} <span className="opacity-60">{c.n}</span>
+                {c.label} <span className="opacity-75">{c.n}</span>
               </button>
             ))}
           </div>
@@ -295,6 +341,7 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
       <PasteReviewDialog
         open={open.kind === 'review'}
         parsed={open.kind === 'review' ? open.parsed : { categories: [] }}
+        notes={open.kind === 'review' ? open.notes : undefined}
         currency={location.currency}
         t={t}
         locale={locale}
@@ -315,11 +362,55 @@ export function MenuEditor({ draft, t, locale, brand }: { draft: MenuDraft; t: E
         className={cx(
           'fixed bottom-5 start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-opacity rtl:translate-x-1/2',
           notice ? 'opacity-100' : 'pointer-events-none opacity-0',
-          notice?.tone === 'error' ? 'bg-brand text-white' : 'bg-ink text-surface',
+          notice?.tone === 'error' ? 'bg-brand-fill text-white' : 'bg-ink text-surface',
         )}
       >
         {notice?.text}
       </p>
     </div>
+  );
+}
+
+/** The first start point. Growth with AI on: a file picker (and drop target) for photos or a PDF.
+ *  Starter: a link to the plans. AI off: shown, but inactive. */
+function UploadCard({ reader, reading, t, locale, onFiles, children }: { reader: { allowed: boolean; ai: boolean }; reading: boolean; t: EditorText; locale: Locale; onFiles: (f: File[]) => void; children: React.ReactNode }) {
+  const box = 'flex min-h-[200px] flex-col items-start rounded-[13px] border border-dashed border-white/20 bg-white/[0.03] p-4 text-start';
+  if (!reader.allowed)
+    return (
+      <Link href={`/${locale}/app/billing`} className={cx(box, 'transition-colors hover:border-gold')}>
+        {children}
+      </Link>
+    );
+  if (!reader.ai)
+    return (
+      <div aria-disabled className={box}>
+        {children}
+      </div>
+    );
+  return (
+    <label
+      aria-busy={reading}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (!reading) onFiles([...e.dataTransfer.files]);
+      }}
+      className={cx(box, 'cursor-pointer border-white/30 transition-colors focus-within:border-gold hover:border-gold', reading && 'animate-pulse cursor-wait')}
+    >
+      <input
+        type="file"
+        multiple
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        disabled={reading}
+        className="sr-only"
+        aria-label={t.uploadTitle}
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = '';
+          onFiles(files);
+        }}
+      />
+      {children}
+    </label>
   );
 }

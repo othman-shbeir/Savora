@@ -64,7 +64,7 @@ export function PhotoField({
     <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-line-2 bg-surface-2 p-4">
       <span
         className={cx(
-          'relative grid shrink-0 place-items-center overflow-hidden bg-brand text-heading-m font-bold text-white',
+          'relative grid shrink-0 place-items-center overflow-hidden bg-brand-fill text-heading-m font-bold text-white',
           shape === 'square' ? 'size-16 rounded-2xl' : 'h-16 w-28 rounded-xl',
           !photo && shape === 'wide' && 'bg-[radial-gradient(circle_at_80%_10%,rgb(219_26_26/0.7),#1f1f1f_70%)]',
         )}

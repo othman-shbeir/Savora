@@ -26,10 +26,10 @@ for owners to edit, publish and track every location. The approved designs live 
 | 3 | Guest menu & QR | Public menu at `/[lang]/r/[slug]`, featured dish, permanent QR with print-ready PNG, share links; Guest menu and QR screens | Done |
 | 4 | Scan analytics | Privacy-friendly scan events, daily rollups, average, busiest day, written insights; Scan analytics screen | Done |
 | 5 | Location settings | Identity, address with map pin and delivery radius, opening hours, guest action links; Location settings screen | Done |
-| 6 | Plans & billing | Plan entitlements and locks (Starter / Growth / Multi-location), payment provider; Plans & billing screen | Next |
-| 7 | AI features | Menu import from photo or PDF, Theme gallery, Theme assistant with contrast checks; Menu themes screens | |
-| 8 | Virtual trial | Research spike on a photos-to-3D service, then upload, quality checks, spots, guided tour; Virtual trial screen | |
-| 9 | Launch | Landing page, SEO, accessibility and performance passes, monitoring, production deploy | |
+| 6 | Plans & billing | Plan entitlements and locks (Starter / Growth / Multi-location), payment provider; Plans & billing screen | Done |
+| 7 | AI features | Menu import from photo or PDF, Theme gallery, Theme assistant with contrast checks; Menu themes screens | Done |
+| 8 | Virtual trial | Research spike on a photos-to-3D service, then upload, quality checks, spots, guided tour; Virtual trial screen | Done (photo tour; 3D capture pending a vendor decision) |
+| 9 | Launch | Landing page, SEO, accessibility and performance passes, monitoring, production deploy | Done (ready to deploy; needs a server, domain and email service) |
 
 ## Phase 0 notes
 
@@ -68,8 +68,8 @@ for owners to edit, publish and track every location. The approved designs live 
   publishing.
 - "Paste your menu" is a predictable rule-based parser: lines ending in a price are items, other lines
   are headings or descriptions, "Name / الاسم" splits languages, Arabic digits are accepted. The owner
-  reviews the result before it joins the draft. Phase 7 adds AI import from photos and PDFs; its card
-  shows as coming soon until then.
+  reviews the result before it joins the draft. Phase 7 added AI import from photos and PDFs, which
+  uses the same review dialog.
 - Photos: up to 8 MB, re-encoded by sharp into a 1600px WebP and a 480px square thumbnail, with
   metadata (including GPS) stripped. Stored in `MEDIA_DIR` (default `~/.savora/media`) and served at
   `/api/media/<id>/{full,thumb}.webp` with a one-year immutable cache. Only the organization that
@@ -153,3 +153,127 @@ for owners to edit, publish and track every location. The approved designs live 
 - Fixed while testing: browser tests read `document.body.textContent`, which includes Next's
   hydration data (every dictionary string), so some text checks could pass without the text on
   screen. All suites now read visible markup only, and all still pass.
+
+## Phase 6 notes
+
+- One plan table in `packages/shared/src/plans.ts` drives both enforcement (API) and explanation
+  (screens). Starter: free, 1 location. Growth: $9 per location a month, up to 3 locations (at 4,
+  Multi-location is cheaper). Multi-location: $29 a month, up to 5. Growth and up unlock scan
+  analytics, menu import, revision history, Order/Reservation buttons, the full theme gallery and the
+  Theme assistant, Virtual trial and priority help; Multi-location adds one shared theme.
+- Billing is manual for now, behind a `BillingProvider` interface (`apps/api/src/lib/billing.ts`):
+  the owner requests a plan and gets a payment reference (`SV-XXXXX`) and a due invoice
+  (`SV-2026-0001`); they pay by bank transfer or cash; Savora staff (emails in `SAVORA_STAFF_EMAILS`)
+  confirm it at `/[lang]/staff`, which activates one paid month. Renewing early extends from the end
+  of the current period. A card provider will implement the same interface with a checkout URL and a
+  webhook instead of the staff click.
+- Time is settled by a pure, unit-tested `settle()`: cancelled plans end at the period end; unpaid
+  ones get 7 days of grace, then fall back to Starter. The API settles hourly, on `/me` and on the
+  billing screen.
+- Nothing is ever deleted by a smaller plan: branches beyond the limit pause (oldest stay live;
+  guests see "taking a short break", publishing and scan counting stop), analytics shows a locked
+  screen with the count of scans already waiting, and saved order/booking links are kept but hidden.
+- Only the owner changes the plan; admins can view it. Owners and admins can add locations through
+  "+ Add location", which explains the plan that fits when the limit is reached.
+- Payment instructions come from `BILLING_BANK_NAME`, `BILLING_ACCOUNT_NAME`, `BILLING_IBAN` and
+  `BILLING_CONTACT_PHONE`; while empty, owners are told the team will contact them.
+- The demo group is on Multi-location (paid ~18 days ahead, two paid invoices). A development staff
+  account, `staff@savora.local`, can sign in and confirm payments.
+- Fixed while testing: people with no workspace (including staff) had no way to sign out from the
+  onboarding page; it now shows who is signed in, a sign-out button, and a staff link for staff.
+  Test runs no longer leave Chrome profiles behind (51 of them had filled the disk).
+
+## Phase 7 notes
+
+- AI runs behind an `AiProvider` interface (`apps/api/src/lib/ai.ts`). Since Phase 9 the one
+  implementation goes through OpenRouter (it started on the Anthropic SDK): one key, any model, set by
+  `OPENROUTER_MODEL` (default `anthropic/claude-sonnet-5.5`). Requests use strict structured outputs
+  built from the same zod schemas, only route to endpoints that honour them
+  (`provider.require_parameters`), and the answer is validated again before use. Photos go as data
+  URLs, PDFs as `file` parts. Errors map to "declined", "too long" and "busy" (rate limits, 5xx, and
+  402 when the OpenRouter account is out of credit). Without `OPENROUTER_API_KEY` the API answers
+  503 `ai_unavailable` and the screens say the feature is not switched on yet; everything else works.
+- Menu import from photos or a PDF (Growth and up): `POST /locations/:id/menu/read`, up to 5 photos
+  (each shrunk to 2,000 px JPEG first) or 1 PDF, 10 MB each. The reading becomes the same shape as
+  "Paste your menu" and opens in the same review dialog, with notes on anything unclear and a
+  warning when the prices look like another currency. Nothing joins the draft until the owner adds it.
+- Menu themes (`/[lang]/app/themes`): nine presets from the design (Auto-match, Roasted editorial and
+  After-dark on Starter; six more on Growth), custom themes from the Theme assistant (Growth), and one
+  theme for every location at once (Multi-location). A locked theme can still be previewed; applying
+  it leads to plans. Themes apply to guests immediately, without publishing.
+- Every theme is checked for WCAG AA: body text, descriptions and prices on the card, and button
+  labels (white, text or background colour, whichever reads best). Presets pass as shipped (a few
+  greys and the citrus orange were darkened slightly); anything the assistant proposes, and anything
+  saved, goes through `fixContrast`, which nudges text, description and primary colours only as far
+  as needed, keeping their hue. Options it changed say "Adjusted for readability".
+- The Theme assistant keeps the conversation in the browser and sends it back each turn (up to 15
+  turns), with an optional photo from the organization's uploads, and which option is in the preview
+  so "make it darker" refines that one. Three options per answer; 30 AI requests per person per hour.
+- Guests: a theme other than Auto-match replaces the menu's colour tokens (Auto-match keeps Savora's,
+  including dark mode). Serif themes set Latin headings in a serif; Arabic stays in Tajawal. Prices
+  sit on the card without a tinted chip in themed menus, which is the pair the check measures. After
+  a downgrade guests see Auto-match, but the owner's choice is kept for when they upgrade again.
+
+## Phase 8 notes
+
+- Research spike (October 2026) on turning photos into a 3D space:
+  - KIRI Engine API: real reconstruction (Gaussian splatting) from 20 to 300 photos or a video of up
+    to 3 minutes; about $1 per scan, 20 free credits, then a $500 minimum top-up; webhooks; results
+    as PLY. The only option found with a documented, self-serve developer API for faithful scans.
+  - World Labs World API: about $1.20 per world, $5 minimum, but it generates a world from the
+    photos rather than reconstructing the room, so guests could see things that aren't there.
+  - Polycam and Luma: API access only on business or enterprise tiers.
+  - Self-hosting (COLMAP plus gsplat) needs a GPU server.
+  - Viewing: Spark (MIT, by World Labs) or three.js r186's built-in splat renderer show splats in the
+    browser, on phones too.
+- Built now, with no vendor: a photo tour. Each photo is a scene guests can look around (drag, arrow
+  keys); the guided tour plays scenes in order for their own number of seconds with a slow drift
+  (none for reduced motion); spots open a dish (name, photo and price from the published menu), a
+  note, or another scene. A 3D capture can later replace a scene's photo without changing spots,
+  publishing or the guest card.
+- Capture quality is measured at upload (`apps/api/src/lib/tour-quality.ts`): sharpness is the
+  variance of the Laplacian on a 1024px greyscale copy (below 12 is "blurry"), brightness the mean
+  grey level (below 40 "too dark", above 215 "too bright"), and the shorter side must be 720px.
+  Calibrated on the demo photos and on blurred and darkened copies of them. Retaking a scene keeps
+  its name and spots.
+- Uploads: up to 10 photos at a time, 15 MB each, 40 scenes per tour, 12 spots per scene. Scenes
+  are stored as 2400px WebP (dish photos stay 1600px). A file that isn't an image stops the whole
+  upload, so nothing is half-added.
+- Publishing copies the scenes and spots; edits wait for the next publish. It needs two scenes and a
+  published menu (the tour opens from it). Photo quality, spots and dish links are advice, not
+  blockers. Owners and admins publish; editors can build. On Starter, or when a branch is paused, the
+  tour is kept but hidden from guests.
+- Guests: a "Virtual trial · Step inside" card under the menu header opens `/[lang]/r/[slug]/tour`;
+  "See it on the menu" jumps to the dish (`#d-<id>`). Owners can preview the draft as a guest.
+
+## Phase 9 notes
+
+- Landing page built from the Figma frame "Savora / Landing" (74:44), with its photos and icons
+  exported from Figma into `apps/web/public/images/landing/`. Sections are server components in
+  `apps/web/src/components/landing/`; English and Arabic copy lives in the dictionaries. The sample
+  menus inside it stay in their own language (marked `lang`), as in the design.
+- Privacy and Terms pages (`/[lang]/privacy`, `/[lang]/terms`) describe what the app actually does with
+  data. They are drafts for legal review; contact details come from `SUPPORT_EMAIL`.
+- SEO: metadata base, canonical and hreflang links on public pages, a 1200×630 social preview image,
+  `robots.txt` (workspace, staff, auth and API kept out), a sitemap with every published guest menu
+  (from `GET /public/sitemap`, refreshed hourly), schema.org `SoftwareApplication` on the landing page
+  and `Restaurant` with its full `Menu` on guest menus. Private areas also send `noindex`.
+- Accessibility: axe-core (WCAG 2.1 AA) on 24 page states, light and dark, now reports nothing. Fixes:
+  muted text `#757575` → `#6B6B6B`, red tint `#FDEDED` → `#FEF3F3`, green `#2E7D53` → `#2B774F`,
+  a `gold-ink` token for gold text on light surfaces, and a `brand-fill` token: dark mode lightens the
+  brand red for red text, which white text can't sit on, so buttons and badges keep `#DB1A1A`. Faded
+  (opacity) text replaced with muted colours; the guest language pill's name now includes its text.
+- Performance (production build, phone, 1.6 Mbps / 150 ms, 4× CPU): guest menu LCP ≈ 1.9 s, landing
+  2.1–2.6 s warm, no layout shift. Public pages dropped from 238 KB to 144 KB of JavaScript by keeping
+  the validation library out of them (`@savora/shared/locale` and `@savora/shared/format` sub-paths for
+  browser code), the hero's entrance animation was removed, and an unused font weight dropped.
+- Monitoring: `/api/health` on the web app reports the web build and the API and database (503 when
+  either is down); API errors are logged with the request id and answered without internals; web
+  server errors are one JSON line each (`instrumentation.ts`). Security headers on every page.
+- Production safety: the API refuses to start with a short session secret, an http origin, PGlite, the
+  demo seed, or no email service. Sign-in links go out over SMTP (`SMTP_URL`), any provider.
+- Deployment: `Dockerfile.api`, `Dockerfile.web` (Next standalone), `docker-compose.prod.yml` with
+  Postgres and Caddy (automatic HTTPS), `.env.production.example`; runbook in `docs/DEPLOY.md`. The
+  Docker files have not been built here (no Docker on this machine): the first build happens on the
+  server.
+- The `/[lang]/design` component showcase answers 404 in production.

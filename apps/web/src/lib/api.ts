@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { cache } from 'react';
-import type { AnalyticsRange, AnalyticsReport, BillingOverview, LocationSettings, Me, MenuDraft, Overview, PublicMenu } from '@savora/shared';
+import type { AnalyticsRange, AnalyticsReport, BillingOverview, LocationSettings, Me, MenuDraft, Overview, PublicMenu, PublicTour, ThemesOverview, TourDraft } from '@savora/shared';
 
 const API_ORIGIN = process.env.API_ORIGIN ?? 'http://localhost:4000';
 
@@ -27,15 +27,6 @@ export async function getOverview(orgId: string): Promise<Overview | null> {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`API overview failed: ${res.status}`);
   return res.json();
-}
-
-export async function getProviders(): Promise<{ email: boolean; google: boolean }> {
-  try {
-    const res = await fetch(`${API_ORIGIN}/auth/providers`, { cache: 'no-store' });
-    return res.ok ? res.json() : { email: true, google: false };
-  } catch {
-    return { email: true, google: false };
-  }
 }
 
 /** The location's draft menu, or null when it doesn't exist or isn't the caller's. */
@@ -98,3 +89,27 @@ export async function getAnalyticsOrLock(locationId: string, range: AnalyticsRan
   if (!res.ok) throw new Error(`API analytics failed: ${res.status}`);
   return { report: await res.json() };
 }
+
+export async function getThemes(locationId: string): Promise<ThemesOverview | null> {
+  const res = await apiServer(`/locations/${locationId}/themes`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API themes failed: ${res.status}`);
+  return res.json();
+}
+
+/** The tour builder's draft, or why it's locked. */
+export async function getTourOrLock(locationId: string): Promise<{ draft: TourDraft } | { locked: true } | null> {
+  const res = await apiServer(`/locations/${locationId}/tour`);
+  if (res.status === 404) return null;
+  if (res.status === 402) return { locked: true };
+  if (!res.ok) throw new Error(`API tour failed: ${res.status}`);
+  return { draft: await res.json() };
+}
+
+/** A published Virtual trial, for guests (no cookies). Null when there is none to show. */
+export const getPublicTour = cache(async (slug: string): Promise<PublicTour | null> => {
+  const res = await fetch(`${API_ORIGIN}/public/tour/${encodeURIComponent(slug)}`, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API public tour failed: ${res.status}`);
+  return res.json();
+});

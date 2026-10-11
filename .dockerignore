@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/.turbo
+**/*.log
+.git
+.env
+.env.*
+!.env.production.example
+**/seed-photos
+docs
+**/coverage
+.data
+uploads-dev
+.claude
+docker-compose*.yml
+deploy

@@ -1,0 +1,98 @@
+# Production on one server: Postgres, the API, the web app, and Caddy for HTTPS.
+#   cp .env.production.example .env.production   # fill it in
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# See docs/DEPLOY.md.
+
+# Docker keeps container logs forever by default; cap them so they can't fill the disk.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: savora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: savora
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Over TCP: during first start-up Postgres runs a temporary socket-only server, which a plain
+    # pg_isready would report as ready before the real one is up.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U savora -d savora"]
+      interval: 5s
+      retries: 20
+    logging: *logging
+
+  api:
+    build: { context: ., dockerfile: Dockerfile.api }
+    restart: unless-stopped
+    init: true
+    logging: *logging
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://savora:${POSTGRES_PASSWORD}@db:5432/savora
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+      WEB_ORIGIN: https://${DOMAIN:?set DOMAIN}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      SMTP_URL: ${SMTP_URL:?set SMTP_URL}
+      MAIL_FROM: ${MAIL_FROM:-Savora <no-reply@savora.menu>}
+      SAVORA_STAFF_EMAILS: ${SAVORA_STAFF_EMAILS:-}
+      BILLING_BANK_NAME: ${BILLING_BANK_NAME:-}
+      BILLING_ACCOUNT_NAME: ${BILLING_ACCOUNT_NAME:-}
+      BILLING_IBAN: ${BILLING_IBAN:-}
+      BILLING_CONTACT_PHONE: ${BILLING_CONTACT_PHONE:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      NEXT_PUBLIC_PLANS_ENABLED: ${NEXT_PUBLIC_PLANS_ENABLED:-true}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    volumes:
+      - media:/data/media
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_MAP_TILES: ${NEXT_PUBLIC_MAP_TILES:-}
+        # Baked into the build: after changing it, rebuild (up -d --build), don't just restart.
+        NEXT_PUBLIC_PLANS_ENABLED: ${NEXT_PUBLIC_PLANS_ENABLED:-true}
+    restart: unless-stopped
+    init: true
+    logging: *logging
+    depends_on: [api]
+    environment:
+      API_ORIGIN: http://api:4000
+      NEXT_PUBLIC_PLANS_ENABLED: ${NEXT_PUBLIC_PLANS_ENABLED:-true}
+      SITE_ORIGIN: https://${DOMAIN}
+      PUBLIC_MENU_ORIGIN: https://${DOMAIN}
+      EXAMPLE_MENU_SLUG: ${EXAMPLE_MENU_SLUG:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+      APP_VERSION: ${APP_VERSION:-unknown}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    logging: *logging
+    depends_on: [web]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+  media:
+  caddy-data:
+  caddy-config:

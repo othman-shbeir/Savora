@@ -266,7 +266,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/[lang]
             <Card className="mt-5 p-6">
               <h2 className="text-title-m font-semibold">{a.splitTitle}</h2>
               <div className="mt-4 grid gap-5 md:grid-cols-2">
-                <Split label={[a.sourceQr, a.sourceLink]} values={[report.sources.qr, report.sources.link]} pct={split(report.sources.qr, report.total)} tones={['bg-brand', 'bg-gold']} />
+                <Split label={[a.sourceQr, a.sourceLink]} values={[report.sources.qr, report.sources.link]} pct={split(report.sources.qr, report.total)} tones={['bg-brand-fill', 'bg-gold']} />
                 <Split label={[a.langAr, a.langEn]} values={[report.languages.ar, report.languages.en]} pct={split(report.languages.ar, report.total)} tones={['bg-ink', 'bg-line-2']} />
               </div>
             </Card>

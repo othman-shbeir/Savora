@@ -8,7 +8,8 @@
     "start": "tsx --env-file=../../.env src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "migrate": "tsx --env-file=../../.env src/migrate.ts"
+    "migrate": "tsx --env-file=../../.env src/migrate.ts",
+    "start:prod": "tsx src/server.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11",
@@ -19,12 +20,14 @@
     "@savora/shared": "*",
     "drizzle-orm": "^0.45.3",
     "fastify": "^5.12.5",
+    "nodemailer": "^7.0.13",
     "sharp": "^0.35.5",
+    "tsx": "^4",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^22",
-    "tsx": "^4",
+    "@types/nodemailer": "^8.0.2",
     "typescript": "^5",
     "vitest": "^5.0.3"
   }

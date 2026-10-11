@@ -1,13 +1,18 @@
 import { createDb, schema, type Db } from '@savora/db';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app';
 import { loadEnv } from './env';
+import { AiRefused, type AiProvider } from './lib/ai';
 import type { MediaStore } from './lib/media';
-import type { Mail } from './mailer';
+import { smtpMailer, type Mail } from './mailer';
 import { purgeScanEvents } from './routes/scans';
 import { DEMO_EMAIL, seedDemo, seedDemoBilling, seedDemoMenu, seedDemoScans, seedDemoSettings } from './seed';
+
+// These tests check the paid-plan rules, so plans are on whatever the local .env says.
+process.env.NEXT_PUBLIC_PLANS_ENABLED = 'true';
 
 // Real Postgres (PGlite, in memory) with the real migrations: no mocks between the API and SQL.
 const env = loadEnv({ DATABASE_URL: 'pglite://memory', SESSION_SECRET: 'test-secret-1234567890', NODE_ENV: 'test', WEB_ORIGIN: 'http://web.test', SAVORA_STAFF_EMAILS: 'staff@savora.test', BILLING_BANK_NAME: 'Bank of Palestine', BILLING_IBAN: 'PS00 TEST 0000 0000 0000 0000 0000 0' });
@@ -47,7 +52,8 @@ async function signIn(email: string, locale = 'en') {
 describe('health', () => {
   it('reports the database as up', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' });
-    expect(res.json()).toEqual({ ok: true, db: 'up' });
+    expect(res.json()).toMatchObject({ ok: true, db: 'up', version: 'dev' });
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });
 
@@ -84,7 +90,11 @@ describe('email sign-in', () => {
   it('only advertises Google when it is configured', async () => {
     const res = await app.inject({ method: 'GET', url: '/auth/providers' });
     expect(res.json()).toEqual({ email: true, google: false });
-    expect((await app.inject({ method: 'GET', url: '/auth/google/start' })).statusCode).toBe(404);
+    // The button still shows; without credentials it leads back to sign-in with an explanation.
+    const start = await app.inject({ method: 'GET', url: '/auth/google/start?locale=ar' });
+    expect(start.statusCode).toBe(302);
+    expect(start.headers.location).toBe('http://web.test/ar/sign-in?error=google_setup');
+    expect((await app.inject({ method: 'GET', url: '/auth/google/callback' })).statusCode).toBe(404);
   });
 });
 
@@ -757,5 +767,405 @@ describe('plans and billing', () => {
     const b = (await app.inject({ method: 'GET', url: `/organizations/${orgId}/billing`, headers: { cookie } })).json();
     expect(b).toMatchObject({ plan: 'multi_location', locations: 3, paused: [], monthlyCents: 2900, subscription: { status: 'active' } });
     expect(b.invoices).toHaveLength(2);
+  });
+});
+
+describe('menu themes and AI', () => {
+  // A stand-in for Claude: records what it was given and answers with fixed data.
+  const seen: { readMenu: Array<{ types: string[]; currency: string }>; design: Array<{ locale: string; turns: number; photo: boolean }> } = { readMenu: [], design: [] };
+  let refuse = false;
+  const fakeAi: AiProvider = {
+    async readMenu({ files, currency }) {
+      seen.readMenu.push({ types: files.map((f) => f.mediaType), currency });
+      if (refuse) throw new AiRefused('cyber');
+      return {
+        currency: 'ILS',
+        categories: [
+          {
+            nameEn: 'Coffee',
+            nameAr: 'قهوة',
+            items: [
+              { nameEn: 'Cardamom Latte', nameAr: 'لاتيه بالهيل', descriptionEn: null, descriptionAr: null, price: 18 },
+              { nameEn: 'Mystery', nameAr: null, descriptionEn: null, descriptionAr: null, price: null },
+              { nameEn: null, nameAr: null, descriptionEn: null, descriptionAr: null, price: 3 },
+            ],
+          },
+          { nameEn: 'Empty', nameAr: null, items: [] },
+        ],
+        notes: ['Prices under the fold were blurry'],
+      };
+    },
+    async designThemes({ locale, turns }) {
+      seen.design.push({ locale, turns: turns.length, photo: turns.some((t) => t.role === 'user' && Boolean(t.photo)) });
+      return {
+        reply: 'Three directions.',
+        options: [
+          { nameEn: 'Pale dawn', nameAr: 'فجر باهت', note: 'Soft and light', colors: { bg: '#F3EADB', surface: '#FBF6EE', primary: '#E89A8F', accent: '#C08A35', ink: '#9A8F86', muted: '#C9BFB5' }, font: 'serif', boldPrices: true },
+          { nameEn: 'Readable', nameAr: 'واضح', note: 'Already fine', colors: { bg: '#F5F5F5', surface: '#FFFFFF', primary: '#B4500B', accent: '#2E7D5B', ink: '#242424', muted: '#6E6E6E' }, font: 'sans', boldPrices: false },
+          { nameEn: 'Broken', nameAr: 'مكسور', note: 'Not a colour', colors: { bg: 'red', surface: '#FFFFFF', primary: '#000000', accent: '#000000', ink: '#000000', muted: '#000000' }, font: 'sans', boldPrices: false },
+        ],
+      };
+    },
+  };
+  let aiApp: FastifyInstance;
+  beforeAll(async () => {
+    aiApp = await buildApp(env, db, { mailer: { send: async (m) => void outbox.push(m) }, store, ai: fakeAi });
+  });
+  afterAll(() => aiApp.close());
+
+  type Owner = Awaited<ReturnType<typeof ownerWithLocation>>;
+  const png = () => sharp({ create: { width: 40, height: 30, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  /** multipart/form-data with several files. */
+  function files(parts: Array<{ name: string; type: string; data: Buffer }>) {
+    const boundary = '----savora' + Math.random().toString(16).slice(2);
+    const payload = Buffer.concat([
+      ...parts.flatMap((p) => [Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${p.name}"\r\nContent-Type: ${p.type}\r\n\r\n`), p.data, Buffer.from('\r\n')]),
+      Buffer.from(`--${boundary}--\r\n`),
+    ]);
+    return { payload, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } };
+  }
+  const read = (o: Owner, on: FastifyInstance, body: ReturnType<typeof files>) => on.inject({ method: 'POST', url: `/locations/${o.locationId}/menu/read`, headers: { cookie: o.cookie, ...body.headers }, payload: body.payload });
+  const call = (o: Owner, method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object) => aiApp.inject({ method, url, headers: { cookie: o.cookie }, ...(payload ? { payload } : {}) });
+
+  it('reads a menu from photos into the review shape, on Growth only', async () => {
+    const o = await ownerWithLocation('ai-read@cafe.test');
+    const photo = files([{ name: 'menu.png', type: 'image/png', data: await png() }]);
+    expect((await read(o, aiApp, photo)).json()).toMatchObject({ error: 'upgrade_required', feature: 'menuImport', plan: 'growth' });
+    await setPlan(o.orgId, 'growth');
+    // Without a key the feature says so instead of failing.
+    expect((await read(o, app, photo)).json()).toEqual({ error: 'ai_unavailable' });
+
+    const res = await read(o, aiApp, files([{ name: 'a.png', type: 'image/png', data: await png() }, { name: 'menu.pdf', type: 'application/pdf', data: Buffer.from('%PDF-1.4 test') }]));
+    expect(res.statusCode).toBe(200);
+    expect(seen.readMenu.at(-1)).toEqual({ types: ['image/jpeg', 'application/pdf'], currency: 'ILS' });
+    expect(res.json()).toEqual({
+      categories: [
+        {
+          nameEn: 'Coffee',
+          nameAr: 'قهوة',
+          items: [
+            { nameEn: 'Cardamom Latte', nameAr: 'لاتيه بالهيل', descriptionEn: null, descriptionAr: null, priceMinor: 1800 },
+            { nameEn: 'Mystery', nameAr: null, descriptionEn: null, descriptionAr: null, priceMinor: 0 },
+          ],
+        },
+      ],
+      notes: ['Prices under the fold were blurry'],
+      currencyMismatch: null,
+    });
+    // The result goes through the normal import once the owner has reviewed it.
+    expect((await o.call('POST', `/locations/${o.locationId}/import`, { categories: res.json().categories })).json()).toEqual({ items: 2 });
+  });
+
+  it('refuses files that are not menus and reports declines', async () => {
+    const o = await ownerWithLocation('ai-read-bad@cafe.test');
+    await setPlan(o.orgId, 'growth');
+    expect((await read(o, aiApp, files([{ name: 'x.txt', type: 'text/plain', data: Buffer.from('hello') }]))).statusCode).toBe(415);
+    const pdf = { name: 'm.pdf', type: 'application/pdf', data: Buffer.from('%PDF-1.4') };
+    expect((await read(o, aiApp, files([pdf, pdf]))).json()).toEqual({ error: 'one_pdf' });
+    refuse = true;
+    expect((await read(o, aiApp, files([pdf]))).json()).toEqual({ error: 'ai_declined' });
+    refuse = false;
+  });
+
+  it('lists the gallery with plan locks and keeps Starter to the essentials', async () => {
+    const o = await ownerWithLocation('themes-starter@cafe.test');
+    const list = (await call(o, 'GET', `/locations/${o.locationId}/themes`)).json();
+    expect(list).toMatchObject({ plan: 'starter', selectedRef: 'auto', current: { ref: 'auto' }, canShare: false, canDesign: false, aiAvailable: true, custom: [] });
+    expect(list.presets.filter((p: { allowed: boolean }) => p.allowed).map((p: { ref: string }) => p.ref)).toEqual(['auto', 'roast', 'dark']);
+    expect(list.presets.every((p: { contrast: { ok: boolean } }) => p.contrast.ok)).toBe(true);
+
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref: 'olive' })).json()).toMatchObject({ error: 'upgrade_required', feature: 'themeGallery' });
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref: 'nope' })).statusCode).toBe(400);
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref: 'dark' })).json()).toEqual({ ok: true, ref: 'dark' });
+    expect((await call(o, 'GET', `/locations/${o.locationId}/themes`)).json().current.ref).toBe('dark');
+    expect((await call(o, 'POST', `/organizations/${o.orgId}/themes/assistant`, { locationId: o.locationId, turns: [{ role: 'user', text: 'warmer' }] })).statusCode).toBe(402);
+  });
+
+  it('shows guests the chosen theme, and Auto-match again after a downgrade', async () => {
+    const o = await ownerWithLocation('themes-public@cafe.test');
+    const slug = (await o.menu()).location.slug;
+    const cat = (await o.call('POST', `/locations/${o.locationId}/categories`, { nameEn: 'Coffee', nameAr: 'قهوة' })).json().id;
+    await o.call('POST', `/locations/${o.locationId}/items`, { categoryId: cat, nameEn: 'Latte', nameAr: 'لاتيه', priceMinor: 1800 });
+    await o.call('POST', `/locations/${o.locationId}/publish`, {});
+    await setPlan(o.orgId, 'growth');
+    await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref: 'souk' });
+    const guest = () => app.inject({ method: 'GET', url: `/public/menu/${slug}` });
+    expect((await guest()).json().theme).toMatchObject({ ref: 'souk', colors: { bg: '#121729' } });
+    await setPlan(o.orgId, 'starter');
+    expect((await guest()).json().theme.ref).toBe('auto');
+    // The choice is remembered for when they upgrade again.
+    expect((await call(o, 'GET', `/locations/${o.locationId}/themes`)).json().selectedRef).toBe('souk');
+  });
+
+  it('designs readable options with the assistant and saves them as custom themes', async () => {
+    const o = await ownerWithLocation('themes-assistant@cafe.test');
+    await setPlan(o.orgId, 'growth');
+    const upload = files([{ name: 'room.png', type: 'image/png', data: await png() }]);
+    const media = await aiApp.inject({ method: 'POST', url: `/organizations/${o.orgId}/media`, headers: { cookie: o.cookie, ...upload.headers }, payload: upload.payload });
+    const photoId = media.json().id;
+    const res = await call(o, 'POST', `/organizations/${o.orgId}/themes/assistant`, { locationId: o.locationId, locale: 'ar', turns: [{ role: 'user', text: 'أدفأ', photoId }] });
+    expect(res.statusCode).toBe(200);
+    expect(seen.design.at(-1)).toEqual({ locale: 'ar', turns: 1, photo: true });
+    const { options } = res.json();
+    // The malformed palette is dropped; the pale one is fixed and says so.
+    expect(options.map((x: { nameEn: string }) => x.nameEn)).toEqual(['Pale dawn', 'Readable']);
+    expect(options.every((x: { contrast: { ok: boolean } }) => x.contrast.ok)).toBe(true);
+    expect(options.map((x: { adjusted: boolean }) => x.adjusted)).toEqual([true, false]);
+    expect(options[0]).toMatchObject({ noteAr: 'Soft and light', noteEn: '', font: 'serif', boldPrices: true });
+
+    // Saving runs the same check, whatever the client sends.
+    const saved = await call(o, 'POST', `/organizations/${o.orgId}/themes`, { nameEn: 'Pale dawn', colors: { bg: '#F3EADB', surface: '#FBF6EE', primary: '#E89A8F', accent: '#C08A35', ink: '#9A8F86', muted: '#C9BFB5' }, font: 'serif' });
+    expect(saved.statusCode).toBe(201);
+    const ref: string = saved.json().ref;
+    expect(ref).toMatch(/^custom:/);
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref })).json()).toEqual({ ok: true, ref });
+    const list = (await call(o, 'GET', `/locations/${o.locationId}/themes`)).json();
+    expect(list.custom).toHaveLength(1);
+    expect(list.custom[0].contrast.ok).toBe(true);
+    expect(list.current).toMatchObject({ ref, tier: 'custom', font: 'serif' });
+
+    // Another organization can neither use nor delete it.
+    const other = await ownerWithLocation('themes-other@cafe.test');
+    await setPlan(other.orgId, 'growth');
+    expect((await call(other, 'PUT', `/locations/${other.locationId}/theme`, { ref })).statusCode).toBe(400);
+    expect((await call(other, 'DELETE', `/organizations/${other.orgId}/themes/${ref.slice(7)}`)).statusCode).toBe(404);
+    // Deleting it puts its locations back on Auto-match.
+    expect((await call(o, 'DELETE', `/organizations/${o.orgId}/themes/${ref.slice(7)}`)).json()).toEqual({ ok: true });
+    expect((await call(o, 'GET', `/locations/${o.locationId}/themes`)).json().selectedRef).toBe('auto');
+  });
+
+  it('shares one theme across locations on Multi-location only', async () => {
+    const o = await ownerWithLocation('themes-share@cafe.test');
+    await setPlan(o.orgId, 'growth');
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref: 'clay', everywhere: true })).json()).toMatchObject({ feature: 'sharedTheme', plan: 'multi_location' });
+    const second = (await o.call('POST', `/organizations/${o.orgId}/locations`, { nameEn: 'Second' })).json();
+    await setPlan(o.orgId, 'multi_location');
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref: 'clay', everywhere: true })).statusCode).toBe(200);
+    expect((await call(o, 'GET', `/locations/${second.id}/themes`)).json().selectedRef).toBe('clay');
+  });
+});
+
+// Photo processing is real (sharp), so these take a few seconds each.
+describe('virtual trial', { timeout: 30_000 }, () => {
+  type Owner = Awaited<ReturnType<typeof ownerWithLocation>>;
+  /** A test photo: busy noise reads as sharp; blur it for a shaken shot, lower the mean for a dark one. */
+  const photo = async (o: { width?: number; height?: number; mean?: number; sigma?: number; blur?: number } = {}) => {
+    const raw = await sharp({ create: { width: o.width ?? 1000, height: o.height ?? 750, channels: 3, background: '#808080', noise: { type: 'gaussian', mean: o.mean ?? 128, sigma: o.sigma ?? 40 } } }).png().toBuffer();
+    return (o.blur ? sharp(raw).blur(o.blur) : sharp(raw)).jpeg({ quality: 90 }).toBuffer();
+  };
+  function upload(parts: Array<{ name: string; type: string; data: Buffer }>) {
+    const boundary = '----savora' + Math.random().toString(16).slice(2);
+    const payload = Buffer.concat([
+      ...parts.flatMap((p) => [Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${p.name}"\r\nContent-Type: ${p.type}\r\n\r\n`), p.data, Buffer.from('\r\n')]),
+      Buffer.from(`--${boundary}--\r\n`),
+    ]);
+    return { payload, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } };
+  }
+  const send = (o: Owner, method: 'POST' | 'PUT', url: string, body: ReturnType<typeof upload>) => app.inject({ method, url, headers: { cookie: o.cookie, ...body.headers }, payload: body.payload });
+  const jpg = (name: string, data: Buffer) => ({ name, type: 'image/jpeg', data });
+
+  /** A Growth café with a published menu of one dish, and a tour of three scenes. */
+  async function cafeWithTour(email: string) {
+    const o = await ownerWithLocation(email);
+    await setPlan(o.orgId, 'growth');
+    const cat = (await o.call('POST', `/locations/${o.locationId}/categories`, { nameEn: 'Coffee', nameAr: 'قهوة' })).json().id;
+    const dish = (await o.call('POST', `/locations/${o.locationId}/items`, { categoryId: cat, nameEn: 'Cardamom Latte', nameAr: 'لاتيه بالهيل', priceMinor: 1800 })).json();
+    const res = await send(o, 'POST', `/locations/${o.locationId}/tour/scenes`, upload([jpg('entrance.jpg', await photo()), jpg('window.jpg', await photo({ blur: 6 })), jpg('lamps.jpg', await photo({ mean: 22, sigma: 8 }))]));
+    return { o, dish, res };
+  }
+
+  it('is part of Growth', async () => {
+    const o = await ownerWithLocation('tour-starter@cafe.test');
+    expect((await o.call('GET', `/locations/${o.locationId}/tour`)).json()).toMatchObject({ error: 'upgrade_required', feature: 'virtualTrial', plan: 'growth' });
+    const stranger = await ownerWithLocation('tour-stranger@cafe.test');
+    await setPlan(stranger.orgId, 'growth');
+    expect((await stranger.call('GET', `/locations/${o.locationId}/tour`)).statusCode).toBe(404);
+  });
+
+  it('turns photos into scenes and checks each one', async () => {
+    const { o, res } = await cafeWithTour('tour-upload@cafe.test');
+    expect(res.statusCode).toBe(201);
+    const draft = res.json();
+    expect(draft.scenes.map((s: { quality: { issues: string[] } }) => s.quality.issues)).toEqual([[], ['blurry'], ['dark']]);
+    expect(draft.scenes[0].quality).toMatchObject({ score: 100, width: 1000, height: 750 });
+    expect(draft.score).toBe(Math.round((100 + 60 + 70) / 3));
+    expect(draft.checks.find((c: { key: string }) => c.key === 'scenes')).toMatchObject({ ok: true, count: 3 });
+    expect(draft.checks.find((c: { key: string }) => c.key === 'quality')).toMatchObject({ ok: false, count: 2 });
+    expect(draft.dishes).toHaveLength(1);
+    expect(draft.hasChanges).toBe(true);
+
+    // A file that isn't a photo stops the whole upload; nothing half-added.
+    const bad = await send(o, 'POST', `/locations/${o.locationId}/tour/scenes`, upload([jpg('ok.jpg', await photo()), { name: 'notes.txt', type: 'text/plain', data: Buffer.from('hello') }]));
+    expect(bad.statusCode).toBe(415);
+    expect((await o.call('GET', `/locations/${o.locationId}/tour`)).json().scenes).toHaveLength(3);
+
+    // Small photos are flagged too.
+    const small = await send(o, 'POST', `/locations/${o.locationId}/tour/scenes`, upload([jpg('tiny.jpg', await photo({ width: 640, height: 480 }))]));
+    expect(small.json().scenes[3].quality.issues).toEqual(['small']);
+  });
+
+  it('names, times, orders and retakes scenes', async () => {
+    const { o, res } = await cafeWithTour('tour-scenes@cafe.test');
+    const [a, b, c] = res.json().scenes;
+    expect((await o.call('PATCH', `/tour/scenes/${a.id}`, { nameEn: 'Entrance', nameAr: 'المدخل', seconds: 2 })).statusCode).toBe(400);
+    const named = (await o.call('PATCH', `/tour/scenes/${a.id}`, { nameEn: 'Entrance', nameAr: 'المدخل', seconds: 12 })).json();
+    expect(named.scenes[0]).toMatchObject({ nameEn: 'Entrance', nameAr: 'المدخل', seconds: 12 });
+    const moved = (await o.call('POST', `/tour/scenes/${c.id}/move`, { to: 0 })).json();
+    expect(moved.scenes.map((s: { id: string }) => s.id)).toEqual([c.id, a.id, b.id]);
+
+    // Retaking the blurry window keeps its place and spots.
+    await o.call('POST', `/tour/scenes/${b.id}/spots`, { x: 0.5, y: 0.5, kind: 'info', labelEn: 'Window table' });
+    const retake = (await send(o, 'PUT', `/tour/scenes/${b.id}/photo`, upload([jpg('window-2.jpg', await photo())]))).json();
+    const window = retake.scenes.find((s: { id: string }) => s.id === b.id);
+    expect(window.quality.issues).toEqual([]);
+    expect(window.spots).toHaveLength(1);
+    expect(window.photo.id).not.toBe(b.photo.id);
+  });
+
+  it('tags spots that open a dish, a note or another scene', async () => {
+    const { o, dish, res } = await cafeWithTour('tour-spots@cafe.test');
+    const [a, b] = res.json().scenes;
+    const other = await cafeWithTour('tour-spots-other@cafe.test');
+    // Only this place's dishes and scenes.
+    expect((await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.3, y: 0.6, kind: 'dish', itemId: other.dish.id })).statusCode).toBe(400);
+    expect((await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.3, y: 0.6, kind: 'scene', targetSceneId: a.id })).statusCode).toBe(400);
+    expect((await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.3, y: 0.6, kind: 'scene', targetSceneId: other.res.json().scenes[0].id })).statusCode).toBe(400);
+    expect((await other.o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.3, y: 0.6, kind: 'info', labelEn: 'x' })).statusCode).toBe(404);
+
+    await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.3, y: 0.6, kind: 'dish', itemId: dish.id, labelEn: 'Order counter' });
+    await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.8, y: 0.4, kind: 'scene', targetSceneId: b.id, labelEn: 'To the window' });
+    const draft = (await o.call('POST', `/tour/scenes/${b.id}/spots`, { x: 0.1, y: 0.2, kind: 'info', labelEn: 'Pendant lights', noteEn: 'Warm in the evening' })).json();
+    expect(draft.scenes[0].spots.map((s: { kind: string }) => s.kind)).toEqual(['dish', 'scene']);
+    expect(draft.checks.filter((c: { key: string }) => ['spots', 'dishes'].includes(c.key)).map((c: { ok: boolean; count: number }) => [c.ok, c.count])).toEqual([
+      [true, 3],
+      [true, 1],
+    ]);
+
+    // Switching a spot's kind drops the old link.
+    const spot = draft.scenes[0].spots[0];
+    const edited = (await o.call('PATCH', `/tour/spots/${spot.id}`, { x: 0.35, y: 0.62, kind: 'info', labelEn: 'Order here', itemId: dish.id })).json();
+    expect(edited.scenes[0].spots[0]).toMatchObject({ kind: 'info', itemId: null, x: 0.35 });
+
+    // Deleting a scene removes the spots that led to it.
+    const after = (await o.call('DELETE', `/tour/scenes/${b.id}`)).json();
+    expect(after.scenes).toHaveLength(2);
+    expect(after.scenes[0].spots.map((s: { kind: string }) => s.kind)).toEqual(['info']);
+  });
+
+  it('publishes to guests with live dish prices, and only on Growth', async () => {
+    const { o, dish, res } = await cafeWithTour('tour-publish@cafe.test');
+    const [a, b] = res.json().scenes;
+    await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.3, y: 0.6, kind: 'dish', itemId: dish.id });
+    await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.8, y: 0.4, kind: 'scene', targetSceneId: b.id });
+    const slug = (await o.menu()).location.slug;
+    const guestTour = () => app.inject({ method: 'GET', url: `/public/tour/${slug}` });
+    const guestMenu = () => app.inject({ method: 'GET', url: `/public/menu/${slug}` });
+
+    // The tour lives on the guest menu, so the menu goes first.
+    expect((await o.call('POST', `/locations/${o.locationId}/tour/publish`)).json()).toEqual({ error: 'not_ready', missing: ['menu'] });
+    await o.call('POST', `/locations/${o.locationId}/publish`, {});
+    const published = await o.call('POST', `/locations/${o.locationId}/tour/publish`);
+    expect(published.statusCode).toBe(201);
+    expect(published.json()).toMatchObject({ hasChanges: false, published: { scenes: 3 } });
+
+    expect((await guestMenu()).json().tour).toMatchObject({ scenes: 3, seconds: 30, cover: { id: a.photo.id } });
+    const tour = (await guestTour()).json();
+    expect(tour).toMatchObject({ slug, name: { en: 'Menu Café' }, currency: 'ILS' });
+    expect(tour.scenes[0].width).toBe(1000);
+    expect(tour.scenes[0].spots[0]).toMatchObject({ kind: 'dish', dish: { nameEn: 'Cardamom Latte', priceMinor: 1800 } });
+    expect(tour.scenes[0].spots[0].itemId).toBeUndefined();
+    expect(tour.scenes[0].spots[1]).toMatchObject({ kind: 'scene', targetSceneId: b.id, dish: null });
+
+    // Prices follow the published menu, not the draft.
+    await o.call('PATCH', `/items/${dish.id}`, { nameEn: 'Cardamom Latte', priceMinor: 2000 });
+    expect((await guestTour()).json().scenes[0].spots[0].dish.priceMinor).toBe(1800);
+    await o.call('POST', `/locations/${o.locationId}/publish`, {});
+    expect((await guestTour()).json().scenes[0].spots[0].dish.priceMinor).toBe(2000);
+
+    // Draft edits wait for the next publish.
+    await o.call('PATCH', `/tour/scenes/${a.id}`, { nameEn: 'Entrance', seconds: 10 });
+    expect((await o.call('GET', `/locations/${o.locationId}/tour`)).json().hasChanges).toBe(true);
+    expect((await guestTour()).json().scenes[0].nameEn).toBeNull();
+
+    // A dish taken off the published menu drops its spot for guests.
+    await o.call('DELETE', `/items/${dish.id}`);
+    await o.call('POST', `/locations/${o.locationId}/items`, { categoryId: (await o.menu()).categories[0].id, nameEn: 'Tea', priceMinor: 900 });
+    await o.call('POST', `/locations/${o.locationId}/publish`, {});
+    expect((await guestTour()).json().scenes[0].spots.map((s: { kind: string }) => s.kind)).toEqual(['scene']);
+
+    // Starter: the tour is kept but guests don't see it.
+    await setPlan(o.orgId, 'starter');
+    expect((await guestTour()).statusCode).toBe(404);
+    expect((await guestMenu()).json().tour).toBeNull();
+    await setPlan(o.orgId, 'growth');
+    expect((await guestTour()).statusCode).toBe(200);
+
+    // Editors can build the tour but not publish it.
+    const editor = await signIn('tour-editor@cafe.test');
+    const editorId = (await app.inject({ method: 'GET', url: '/me', headers: { cookie: editor.cookie } })).json().user.id;
+    await db.insert(schema.memberships).values({ organizationId: o.orgId, userId: editorId, role: 'editor' });
+    const asEditor = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) => app.inject({ method, url, headers: { cookie: editor.cookie }, ...(payload ? { payload } : {}) });
+    expect((await asEditor('PATCH', `/tour/scenes/${a.id}`, { nameEn: 'Door', seconds: 8 })).statusCode).toBe(200);
+    expect((await asEditor('POST', `/locations/${o.locationId}/tour/publish`)).statusCode).toBe(403);
+
+    expect((await o.call('DELETE', `/locations/${o.locationId}/tour/publish`)).json().published).toBeNull();
+    expect((await guestTour()).statusCode).toBe(404);
+    expect((await guestMenu()).json().tour).toBeNull();
+  });
+});
+
+describe('production settings', () => {
+  const prod = { NODE_ENV: 'production', DATABASE_URL: 'postgres://savora@db/savora', SESSION_SECRET: 'x'.repeat(40), WEB_ORIGIN: 'https://savora.menu', SMTP_URL: 'smtps://u:p@smtp.example.com:465' };
+  it('accepts a sound production setup', () => {
+    expect(loadEnv(prod).NODE_ENV).toBe('production');
+  });
+  it('refuses settings that are unsafe or lose data on a server', () => {
+    const issues = (over: Record<string, string>) => {
+      try {
+        loadEnv({ ...prod, ...over });
+        return [];
+      } catch (e) {
+        return (e as { issues: Array<{ path: string[] }> }).issues.map((i) => i.path[0]);
+      }
+    };
+    expect(issues({ SESSION_SECRET: 'short-but-16-chars' })).toEqual(['SESSION_SECRET']);
+    expect(issues({ WEB_ORIGIN: 'http://savora.menu' })).toEqual(['WEB_ORIGIN']);
+    expect(issues({ DATABASE_URL: 'pglite://./data' })).toEqual(['DATABASE_URL']);
+    expect(issues({ SEED_DEMO: '1' })).toEqual(['SEED_DEMO']);
+    expect(issues({ SMTP_URL: '' })).toEqual(['SMTP_URL']);
+  });
+});
+
+describe('email', () => {
+  it('sends sign-in links through SMTP with the configured sender', async () => {
+    const sent: Array<{ from?: unknown; to?: unknown; subject?: unknown; text?: unknown }> = [];
+    const transport = { sendMail: async (m: (typeof sent)[number]) => void sent.push(m) } as unknown as Parameters<typeof smtpMailer>[3];
+    const mailer = smtpMailer('smtp://unused', 'Savora <hello@savora.menu>', app.log, transport);
+    await mailer.send({ to: 'owner@cafe.test', subject: 'Your sign-in link', text: 'https://savora.menu/en/auth/verify#token=x' });
+    expect(sent).toEqual([{ from: 'Savora <hello@savora.menu>', to: 'owner@cafe.test', subject: 'Your sign-in link', text: 'https://savora.menu/en/auth/verify#token=x' }]);
+  });
+  it('reports a failed send instead of pretending', async () => {
+    const transport = { sendMail: async () => Promise.reject(new Error('550 rejected')) } as unknown as Parameters<typeof smtpMailer>[3];
+    await expect(smtpMailer('smtp://unused', 'x@y.z', app.log, transport).send({ to: 'a@b.c', subject: 's', text: 't' })).rejects.toThrow('550');
+  });
+});
+
+describe('plans switched off for testing', () => {
+  afterAll(() => {
+    process.env.NEXT_PUBLIC_PLANS_ENABLED = 'true';
+  });
+  it('gives a Starter place every feature and any number of locations', async () => {
+    const o = await ownerWithLocation('plans-off@cafe.test');
+    expect((await o.call('GET', `/locations/${o.locationId}/analytics`)).statusCode).toBe(402);
+    process.env.NEXT_PUBLIC_PLANS_ENABLED = 'false';
+    expect((await o.call('GET', `/locations/${o.locationId}/analytics`)).statusCode).toBe(200);
+    expect((await o.call('GET', `/locations/${o.locationId}/tour`)).statusCode).toBe(200);
+    for (const name of ['Second', 'Third', 'Fourth', 'Fifth', 'Sixth']) expect((await o.call('POST', `/organizations/${o.orgId}/locations`, { nameEn: name })).statusCode).toBe(201);
+    const me = (await o.call('GET', '/me')).json();
+    expect(me.organizations[0].brands[0].locations.every((l: { paused: boolean }) => !l.paused)).toBe(true);
+    // Switching plans back on applies the real limits again; nothing is deleted.
+    process.env.NEXT_PUBLIC_PLANS_ENABLED = 'true';
+    const after = (await o.call('GET', '/me')).json();
+    expect(after.organizations[0].brands[0].locations.filter((l: { paused: boolean }) => l.paused)).toHaveLength(5);
   });
 });

@@ -45,7 +45,7 @@ export function AppShell({ t, locale, active, workspace, children }: { t: Dictio
         <p className="flex items-center justify-between gap-2 text-overline font-semibold tracking-[0.1em] text-muted uppercase">
           <span className="truncate">{workspace.orgName}</span>
           {current && (
-            <span className={cx('shrink-0 rounded-full px-2 py-0.5 normal-case', current.paused ? 'bg-brand-soft text-brand' : current.status === 'live' ? 'bg-ok-soft text-ok' : 'bg-gold-soft text-gold')}>
+            <span className={cx('shrink-0 rounded-full px-2 py-0.5 normal-case', current.paused ? 'bg-brand-soft text-brand' : current.status === 'live' ? 'bg-ok-soft text-ok' : 'bg-gold-soft text-gold-ink')}>
               {current.paused ? t.locks.paused : current.status === 'live' ? t.overview.statusLive : t.overview.statusDraft}
             </span>
           )}
@@ -74,7 +74,7 @@ export function AppShell({ t, locale, active, workspace, children }: { t: Dictio
               )}
             >
               {t.nav[item.key]}
-              {item.isNew && <span className="ms-auto rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold text-white">{t.nav.new}</span>}
+              {item.isNew && <span className="ms-auto rounded-full bg-brand-fill px-2 py-0.5 text-[10px] font-semibold text-white">{t.nav.new}</span>}
             </Link>
           );
         })}

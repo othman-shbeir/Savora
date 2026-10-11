@@ -87,11 +87,14 @@
     "checkBody": "We sent a sign-in link to {email}. It works once and expires in 15 minutes.",
     "useOther": "Use a different email",
     "devLink": "Open the sign-in link (development only)",
-    "terms": "By continuing you agree to Savora's Terms and Privacy Policy.",
+    "terms": "By continuing you agree to Savora’s {terms} and {privacy}.",
     "verifying": "Signing you in…",
     "expiredTitle": "This link has expired",
     "expiredBody": "Sign-in links work once and expire after 15 minutes. Ask for a new one.",
-    "backToSignIn": "Back to sign in"
+    "backToSignIn": "Back to sign in",
+    "googleSetup": "Google sign-in isn’t set up on this server yet. Use your email for now.",
+    "termsLink": "Terms",
+    "privacyLink": "Privacy Policy"
   },
   "welcome": {
     "title": "Set up your place",
@@ -157,7 +160,6 @@
     "reviewNote": "Review every item before it reaches your live menu.",
     "uploadTitle": "Upload a photo or PDF",
     "uploadBody": "A clear picture works best",
-    "uploadSoon": "Coming with AI import",
     "pasteTitle": "Paste your menu",
     "pasteLabel": "Menu text",
     "pastePlaceholder": "Paste your menu here…\nCardamom Latte / لاتيه بالهيل 18",
@@ -284,7 +286,23 @@
       "one": "Added {n} item to your draft.",
       "other": "Added {n} items to your draft."
     },
-    "viewMenu": "View menu"
+    "viewMenu": "View menu",
+    "uploadCta": "Choose photos or a PDF",
+    "uploadHint": "Up to 5 photos, or 1 PDF",
+    "uploadGrowth": "Comes with Growth",
+    "uploadReading": "Reading your menu…",
+    "uploadOff": "Not switched on yet",
+    "readUnavailable": "Reading menus from photos isn’t switched on yet. Paste your menu instead.",
+    "readNothing": "We couldn’t find dishes in that file. Try a sharper, straight-on photo.",
+    "readNotMenu": "Use photos (JPG, PNG, WebP) or a PDF.",
+    "readTooLarge": "That’s too much at once. Use up to 5 photos, 10 MB each.",
+    "readOnePdf": "Add one PDF at a time.",
+    "readBusy": "The reader is busy right now. Try again in a moment.",
+    "readDeclined": "We couldn’t read that file. Try another photo.",
+    "readLimit": "That’s a lot of menus for one hour. Try again a little later.",
+    "readNotes": "Worth checking",
+    "readCurrency": "Prices looked like {currency}. They are added as written, so check them before publishing.",
+    "readFoundTitle": "Check what we read"
   },
   "guest": {
     "title": "{name} · Menu",
@@ -320,7 +338,23 @@
     "delivers": "Delivers within {km} km",
     "mapLabel": "Map showing {name}",
     "pausedTitle": "{name}'s menu is taking a short break",
-    "pausedBody": "It will be back at this same link soon."
+    "pausedBody": "It will be back at this same link soon.",
+    "tourTitle": "Virtual trial",
+    "tourOther": "عيش اللحظة",
+    "tourMeta": "{scenes} · {time}",
+    "stepInside": "Step inside",
+    "tourPageTitle": "Step inside {name}",
+    "backToMenu": "Back to the menu",
+    "seeOnMenu": "See it on the menu",
+    "playTour": "Play tour",
+    "pauseTour": "Pause",
+    "tourScenes": "Scenes",
+    "tourHint": "Drag to look around · tap the dots",
+    "closeSpot": "Close",
+    "scenesShort": {
+      "one": "{n} scene",
+      "other": "{n} scenes"
+    }
   },
   "qr": {
     "overline": "Distribution",
@@ -702,7 +736,10 @@
       "one": "{n} location",
       "other": "{n} locations"
     },
-    "ctaSwitch": "Switch to {plan}"
+    "ctaSwitch": "Switch to {plan}",
+    "usageUnlimited": "Locations: {n}",
+    "plansOffTitle": "Plans are switched off for testing",
+    "plansOffBody": "Every feature is unlocked for every place, with no location limit. Turn plans back on with NEXT_PUBLIC_PLANS_ENABLED=true."
   },
   "locks": {
     "growth": "Growth",
@@ -749,5 +786,470 @@
     "colStatus": "Status",
     "recent": "Recent decisions",
     "done": "Done."
+  },
+  "themes": {
+    "overline": "Menu design · {location}",
+    "new": "New",
+    "title": "Menu themes",
+    "lead": "Pick a look for your guest menu, or shape your own with the Theme assistant.",
+    "preview": "Preview menu",
+    "apply": "Apply theme",
+    "applying": "Applying…",
+    "applied": "Applied. Guests see the new look now.",
+    "inUse": "In use",
+    "yourPlan": "Your plan",
+    "starterPrice": "Free",
+    "growthPrice": "$9 / location",
+    "multiPrice": "$29 / month",
+    "starterLine": "3 essential themes",
+    "growthLine": "Full gallery · Theme assistant · custom themes",
+    "multiLine": "One theme shared across every location",
+    "planStrip": "What each plan includes",
+    "tabGallery": "Theme gallery",
+    "tabAssistant": "Theme assistant",
+    "tabs": "Menu themes views",
+    "filters": "Filter themes",
+    "filterAll": "All",
+    "filterLight": "Light",
+    "filterDark": "Dark",
+    "filterWarm": "Warm",
+    "filterBold": "Bold",
+    "tierFree": "Free",
+    "tierGrowth": "Growth",
+    "tierCustom": "Custom",
+    "locked": "Comes with Growth",
+    "lockedNote": "{n} more themes unlock with Growth. Your current theme and menu stay as they are when you switch.",
+    "upgradeToApply": "Upgrade to apply",
+    "customTitle": "Your themes",
+    "delete": "Delete",
+    "deleteConfirm": "Delete “{name}”?",
+    "deleteYes": "Delete theme",
+    "deleted": "Theme deleted.",
+    "teaserOverline": "Theme assistant · Growth",
+    "teaserTitle": "Describe a mood. Get a theme made for your place.",
+    "teaserBody": "Share words, a photo of your space or your logo. The assistant builds colours and type that pass contrast checks.",
+    "teaserCta": "Upgrade to Growth",
+    "teaserPrice": "$9 / location / month",
+    "teaserUser": "Warm and calm, like our morning light.",
+    "teaserTheme": "Morning light",
+    "livePreview": "Live preview",
+    "previewLanguage": "Preview language",
+    "background": "Background",
+    "primary": "Primary",
+    "accent": "Accent",
+    "text": "Text",
+    "contrastText": "Text {r}:1",
+    "contrastMuted": "Descriptions {r}:1",
+    "contrastPrices": "Prices {r}:1",
+    "contrastButtons": "Buttons {r}:1",
+    "pass": "AA",
+    "fail": "below AA",
+    "fontSans": "Poppins · Tajawal",
+    "fontSerif": "Serif headings · Tajawal",
+    "boldPrices": "Bold prices",
+    "shareTitle": "Use on all {n} locations",
+    "shareTitleOne": "Use on every location",
+    "shareBody": "Share one theme across branches with Multi-location.",
+    "shareOn": "Applying sets this theme for every location.",
+    "shareBadge": "Multi-location",
+    "editorsNote": "Only owners and admins can change the theme.",
+    "failed": "That didn’t work. Check your connection and try again.",
+    "assistant": {
+      "title": "Theme assistant",
+      "subtitle": "Designs colours and type for {name}",
+      "startOver": "Start over",
+      "hello": "Hi {name}! Tell me how {place} should feel, or add a photo of your space or logo and I’ll start from that.",
+      "helloAnon": "Hi! Tell me how {place} should feel, or add a photo of your space or logo and I’ll start from that.",
+      "chips": [
+        "Make it darker",
+        "More contrast",
+        "Match my logo",
+        "Try a serif feel"
+      ],
+      "placeholder": "Describe a mood, a colour or a place…",
+      "inputLabel": "Message to the Theme assistant",
+      "send": "Send",
+      "attach": "Add a photo",
+      "removePhoto": "Remove photo",
+      "uploading": "Adding photo…",
+      "thinking": "Designing three directions…",
+      "picked": "Picked",
+      "pick": "Preview",
+      "allPass": "All text passes WCAG AA",
+      "adjusted": "Adjusted for readability",
+      "checkedBoth": "Arabic and English checked",
+      "save": "Save as “{name}”",
+      "saving": "Saving…",
+      "saved": "Saved to your themes. Apply it when you’re ready.",
+      "keepTweaking": "Keep tweaking",
+      "you": "You",
+      "unavailableTitle": "The Theme assistant is not switched on yet",
+      "unavailableBody": "It needs an AI key on the server. The gallery works as usual in the meantime.",
+      "busy": "The assistant is busy right now. Try again in a moment.",
+      "declined": "The assistant couldn’t design that. Try describing it another way.",
+      "limit": "That’s a lot of designs for one hour. Try again a little later.",
+      "photoFailed": "That photo couldn’t be added. Use a JPG, PNG or WebP under 8 MB."
+    },
+    "saveApply": "Save & apply",
+    "deleteBody": "Places using it go back to Auto-match."
+  },
+  "tour": {
+    "overline": "Growth feature · {location}",
+    "new": "New",
+    "title": "Virtual trial",
+    "titleOther": "عيش اللحظة",
+    "lead": "Let guests walk through {name} from your menu before they arrive.",
+    "step": "Step {n} of 4",
+    "steps": [
+      "Add photos",
+      "Arrange the tour",
+      "Tag spots",
+      "Publish"
+    ],
+    "stepsLabel": "Progress",
+    "preview": "Preview as guest",
+    "publish": "Publish to menu",
+    "update": "Publish changes",
+    "publishing": "Publishing…",
+    "published": "On your menu",
+    "publishedToast": "Published. Guests can step inside from your menu.",
+    "takeDown": "Take it off the menu",
+    "takenDown": "Taken off the menu. Your scenes are kept.",
+    "lockedTitle": "Virtual trial comes with Growth",
+    "lockedBody": "Let guests walk through your place from the menu, with spots that open your dishes. Upgrade to build your tour.",
+    "emptyTitle": "Start with photos of your place",
+    "emptyBody": "Each photo becomes a scene guests can look around. Add a few, from the door to the counter.",
+    "emptyCta": "Choose photos",
+    "emptyDrop": "or drop them here",
+    "tips": [
+      "Shoot in daylight, lights on",
+      "Hold still, landscape works best",
+      "One photo from each place a guest would stand",
+      "Wide photos can be looked around"
+    ],
+    "uploading": "Adding photos…",
+    "uploaded": {
+      "one": "{n} photo added",
+      "other": "{n} photos added"
+    },
+    "viewerLabel": "Scene {n}: {name}",
+    "sceneFallback": "Scene {n}",
+    "tagSpot": "Tag a spot",
+    "tagging": "Tap the photo to place a spot",
+    "cancelTag": "Cancel",
+    "fullscreen": "Full screen",
+    "exitFullscreen": "Exit full screen",
+    "quality": "{n}% quality",
+    "tourOverline": "Guided tour",
+    "tourLength": "{scenes} · {time}",
+    "scenes": {
+      "one": "{n} scene",
+      "other": "{n} scenes"
+    },
+    "play": "Play tour",
+    "stop": "Stop",
+    "addScene": "Scene",
+    "addSceneLabel": "Add scenes",
+    "hint": "Drag to look around · tap a spot",
+    "editScene": "Edit scene",
+    "sceneTitle": "Scene {n}",
+    "sceneNameEn": "Name (English)",
+    "sceneNameAr": "Name (Arabic)",
+    "seconds": "Time in the tour",
+    "secondsUnit": "{n} s",
+    "earlier": "Move earlier",
+    "later": "Move later",
+    "retake": "Retake",
+    "retakeLabel": "Replace the photo of {name}",
+    "deleteScene": "Delete scene",
+    "deleteSceneConfirm": "Delete this scene? Spots on it, and spots that lead to it, go too.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "qualityOverline": "Capture quality",
+    "qualityGreat": "Great, ready to publish",
+    "qualityGood": "Good, a few could be better",
+    "qualityPoor": "Some photos need a retake",
+    "qualitySummary": "{photos} · {n} could be better",
+    "photos": {
+      "one": "{n} photo",
+      "other": "{n} photos"
+    },
+    "issues": {
+      "blurry": "Blurry",
+      "dark": "Too dark",
+      "bright": "Too bright",
+      "small": "Too small"
+    },
+    "issueHelp": {
+      "blurry": "Hold still or lean on something",
+      "dark": "Turn the lights on or shoot by day",
+      "bright": "Avoid pointing at the window",
+      "small": "Use the full camera resolution"
+    },
+    "drop": "Drop photos or {browse}",
+    "browse": "browse",
+    "formats": "JPG · PNG · HEIC",
+    "spotsOverline": "Spots guests can tap",
+    "spotsCount": {
+      "zero": "No spots yet",
+      "one": "{n} spot tagged",
+      "other": "{n} spots tagged"
+    },
+    "tagOnView": "Tag on view",
+    "addSpot": "Add a spot",
+    "spotDish": "Linked to {dish}",
+    "spotInfo": "Note",
+    "spotScene": "Goes to {scene}",
+    "kindDish": "Dish",
+    "kindInfo": "Info",
+    "kindScene": "Scene",
+    "tip": "Spots linked to a dish give guests a reason to tap. Try linking {dish}.",
+    "tipNoDishes": "Add dishes to your menu, then link them to the spots where guests find them.",
+    "spotTitleNew": "New spot",
+    "spotTitleEdit": "Edit spot",
+    "spotKind": "What it opens",
+    "spotDishLabel": "Dish",
+    "spotDishPick": "Choose a dish",
+    "spotSceneLabel": "Goes to",
+    "spotScenePick": "Choose a scene",
+    "spotLabelEn": "Label (English)",
+    "spotLabelAr": "Label (Arabic)",
+    "spotNoteEn": "Note (English)",
+    "spotNoteAr": "Note (Arabic)",
+    "spotLabelHint": "Shown next to the spot, like “Order counter”.",
+    "spotDelete": "Delete spot",
+    "spotNumber": "Spot {n}",
+    "publishOverline": "Publish",
+    "stateLive": "Live on your menu",
+    "stateChanges": "Changes not published yet",
+    "stateReady": "Ready to publish",
+    "stateAlmost": "Almost there",
+    "checks": {
+      "scenes": {
+        "ok": "{scenes} in the tour",
+        "todo": "Add at least 2 photos"
+      },
+      "menu": {
+        "ok": "Your menu is published",
+        "todo": "Publish your menu first"
+      },
+      "quality": {
+        "ok": "Every photo looks good",
+        "todo": "{photos} could be sharper or brighter"
+      },
+      "spots": {
+        "ok": "{spots}",
+        "todo": "Tag spots guests can tap"
+      },
+      "dishes": {
+        "ok": "{n} linked to a dish",
+        "todo": "Link a spot to a dish"
+      }
+    },
+    "optional": "Optional",
+    "guestsSee": "Guests will see, at the top of your menu",
+    "stepInside": "Step inside",
+    "failed": "That didn’t work. Check your connection and try again.",
+    "errors": {
+      "not_an_image": "One of the files isn’t a photo we can read. Use JPG, PNG or HEIC.",
+      "too_large": "A photo is over 15 MB. Try a smaller one.",
+      "too_many_files": "Add up to 10 photos at a time.",
+      "too_many_scenes": "A tour can have up to 40 scenes.",
+      "too_many_spots": "A scene can have up to 12 spots.",
+      "not_ready": "Not ready yet: see the checklist."
+    },
+    "ownerOnly": "Only owners and admins can publish.",
+    "spotDishHint": "Guests tap to see the dish"
+  },
+  "landing": {
+    "metaTitle": "Savora · Bilingual QR menus for cafés and restaurants",
+    "metaDescription": "Turn a photo or text menu into a polished English and Arabic QR menu. Change a price or a dish and the same link stays on every table.",
+    "nav": {
+      "examples": "Live menus",
+      "how": "How it works",
+      "pricing": "Pricing",
+      "signIn": "Sign in",
+      "start": "Build your menu",
+      "workspace": "Open your workspace",
+      "label": "Main"
+    },
+    "badgeTag": "EN + عربي",
+    "badge": "QR menus for cafés and restaurants",
+    "title1": "Your menu,",
+    "title2": "with a point of view.",
+    "lead": "Turn a photo or text menu into a polished English–Arabic QR experience. Change one price or dish, and the same link stays on every table.",
+    "ctaStart": "Start with your menu",
+    "ctaExample": "Open a live example",
+    "audience": "For café and restaurant owners across the region",
+    "chipReadyTitle": "Ready to publish",
+    "chipReadyBody": "Even if you start with a photo",
+    "chipQrTitle": "One table link",
+    "chipQrBody": "Change the menu, not the QR",
+    "placesOverline": "Places on Savora",
+    "placesTitle1": "The room, the plate,",
+    "placesTitle2": "the light.",
+    "placesLead": "Every place brings its own mood. Savora keeps the menu as considered as the room.",
+    "placesCta": "Explore live menus",
+    "places": {
+      "room": {
+        "tag": "The room",
+        "title": "Salt & Stem",
+        "kind": "Dining room · Ramallah",
+        "alt": "A café dining room with pendant lights and tall windows"
+      },
+      "light": {
+        "tag": "The light",
+        "title": "Cardamom Latte",
+        "kind": "Signature drink",
+        "onMenu": "On the menu",
+        "alt": "Hands holding a latte in a paper cup"
+      },
+      "flatWhite": {
+        "title": "Flat White",
+        "kind": "Counter service",
+        "alt": "A flat white with latte art on a saucer"
+      },
+      "plate": {
+        "tag": "The plate",
+        "title": "Honey Toast",
+        "kind": "Morning bites",
+        "alt": "Honey toast with pistachios, seen from above"
+      },
+      "tartine": {
+        "title": "Pistachio Tartine",
+        "kind": "All day",
+        "alt": "A pistachio tartine on a plate"
+      },
+      "cake": {
+        "title": "Cardamom Cake",
+        "kind": "Sweets",
+        "alt": "A slice of cardamom cake with honey and nuts"
+      }
+    },
+    "placesCaption": "Six moments from Salt & Stem, all served from one live menu.",
+    "photoCredit": "Photos via Unsplash",
+    "guestsOverline": "What your guests see",
+    "guestsTitle": "Guests never see the dashboard. They see your place.",
+    "guestsAccent": "That is the difference.",
+    "current": {
+      "overline": "Phase 01 · Current",
+      "title": "Update in seconds",
+      "body": "Change a price or sell out a dish and every table sees it right away.",
+      "chip": "Price updated"
+    },
+    "yours": {
+      "overline": "Phase 03 · Yours",
+      "title": "The same QR, season after season",
+      "body": "Print it once. New menus, same link, no reprinting.",
+      "printed": "Printed March · still live"
+    },
+    "local": {
+      "overline": "Phase 02 · Local",
+      "title": "English and Arabic, from day one",
+      "body": "Guests switch language in one tap, with a proper right-to-left layout.",
+      "en": "English",
+      "ar": "العربية"
+    },
+    "liveTitle": "Live on 12 tables",
+    "liveBody": "Last change 2 min ago",
+    "howOverline": "A clear way to begin",
+    "howTitle1": "From a photo",
+    "howTitle2": "to a menu your place can own.",
+    "howLead": "Three calm steps. No design skills, no retyping, and no new QR code when things change.",
+    "howTime": "About 10 minutes to go live",
+    "stepLabel": "Step {n}",
+    "steps": [
+      {
+        "time": "~2 min",
+        "title": "Bring what you have",
+        "body": "Upload a photo, paste your text, or start clean. You do not need to retype the menu.",
+        "alt": "A printed café menu on a clipboard"
+      },
+      {
+        "time": "~5 min",
+        "title": "Shape the details",
+        "body": "Review names, prices, and translations in one place, then choose a look that fits the room.",
+        "alt": "A café owner working on a laptop behind the counter"
+      },
+      {
+        "time": "~1 min",
+        "title": "Place the QR and go",
+        "body": "Print the code or share it. When the menu changes, update it without replacing the link.",
+        "alt": "A QR code card on a café table"
+      }
+    ],
+    "readTitle": "Menu photo read",
+    "readBody": "24 items · 5 categories found",
+    "editorLabel": "Menu editor",
+    "editorEditing": "Editing",
+    "qrChecks": [
+      "Same link, every season",
+      "Updates go live instantly"
+    ],
+    "statLive": "Live",
+    "statLabel": "scans today",
+    "pricingOverline": "Plans that make sense",
+    "pricingTitle1": "Start small",
+    "pricingTitle2": "and grow when your place does.",
+    "pricingLead": "Choose the tools you need now. Every plan keeps your live menu and QR link exactly where they are.",
+    "plans": {
+      "starter": {
+        "tag": "Best place to start",
+        "unit": "no card required",
+        "desc": "The essentials for one location and one live menu.",
+        "features": [
+          "1 location + 1 live menu",
+          "English + Arabic editor",
+          "Branded QR and publishing"
+        ],
+        "cta": "Start free"
+      },
+      "growth": {
+        "tag": "For a busy place",
+        "unit": "/ location / month",
+        "desc": "Imports, analytics, and more control for a busy location.",
+        "features": [
+          "Photo & PDF menu import",
+          "Scan analytics and revision history",
+          "Location styling + guest links",
+          "Priority help"
+        ],
+        "cta": "Choose Growth"
+      },
+      "multi_location": {
+        "tag": "Up to 5 locations",
+        "unit": "/ month",
+        "desc": "A shared workspace for growing restaurant groups.",
+        "features": [
+          "Up to 5 locations",
+          "Shared brand direction",
+          "Location-by-location menus and insights"
+        ],
+        "cta": "Choose Multi-location"
+      }
+    },
+    "free": "Free",
+    "pricingNote": "Subscriptions are billed in USD. Your menu’s customer-facing currency stays separate from your Savora plan.",
+    "closingOverline": "Your menu deserves more than a PDF",
+    "closingTitle": "Make the first scan tell guests: you found the right place.",
+    "closingBody": "Swap the PDF for a menu that opens instantly, reads beautifully in English and Arabic, and is always current.",
+    "closingCta": "Build a free menu",
+    "closingTicks": [
+      "Free to start",
+      "No card required",
+      "English + Arabic"
+    ],
+    "pdfName": "menu-final-v7.pdf",
+    "pdfMeta": "4.2 MB · 3 pages",
+    "pdfCaption": "Pinch. Zoom. Squint.",
+    "footerLine": "Less paper. A clearer presence.",
+    "footerLabel": "Footer",
+    "privacy": "Privacy",
+    "terms": "Terms"
+  },
+  "legal": {
+    "contact": "Questions or requests? Write to"
   }
 }

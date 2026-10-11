@@ -34,7 +34,7 @@ function WeekCard({ week, t, locale }: { week: AnalyticsReport; t: Awaited<Retur
         </div>
         <div aria-hidden className="flex h-12 items-end gap-1">
           {week.bars.map((b) => (
-            <span key={b.key} className={cx('w-2 rounded-t-[2px]', b.key === week.peak?.key ? 'bg-brand' : 'bg-gold/45')} style={{ height: `${Math.max(3, (b.scans / top) * 48)}px` }} />
+            <span key={b.key} className={cx('w-2 rounded-t-[2px]', b.key === week.peak?.key ? 'bg-brand-fill' : 'bg-gold/45')} style={{ height: `${Math.max(3, (b.scans / top) * 48)}px` }} />
           ))}
         </div>
       </Card>

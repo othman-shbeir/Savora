@@ -75,11 +75,12 @@ export function ItemRow({
         )}
       </span>
 
-      <div className={cx('min-w-0', !available && 'opacity-60')}>
+      {/* Hidden dishes read as quieter, but stay legible: muted text and the badge, not transparency. */}
+      <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <strong className="text-title-s font-semibold">{name}</strong>
+          <strong className={cx('text-title-s font-semibold', !available && 'text-muted')}>{name}</strong>
           {!available && <span className="rounded-full border border-line-2 px-2 py-0.5 text-[10px] font-semibold text-muted">{t.hidden}</span>}
-          {missing && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-[10px] font-semibold text-gold">{missing}</span>}
+          {missing && <span className="rounded-full bg-gold-soft px-2 py-0.5 text-[10px] font-semibold text-gold-ink">{missing}</span>}
         </p>
         <p className="mt-0.5 truncate text-caption text-muted">
           {other && (

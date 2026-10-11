@@ -2,11 +2,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { contactUrl, fill, formatPrice, type Locale, type Photo, type PublicMenu } from '@savora/shared';
+import { contactUrl, fill, formatPrice, themeVars, type Locale, type Photo, type PublicMenu, type Theme } from '@savora/shared';
 import { GuestMap } from '@/components/guest/guest-map';
 import { ScanBeacon } from '@/components/guest/scan-beacon';
 import { SectionNav } from '@/components/guest/section-nav';
+import { TourTeaserCard } from '@/components/tour/guest-tour';
 import { getPublicMenu, MENU_ORIGIN } from '@/lib/api';
+import { jsonLdText, menuJsonLd } from '@/lib/menu-jsonld';
 import { descriptionOf, primaryName } from '@/lib/menu-text';
 import { cx } from '@/lib/cx';
 import { openStatusText } from '@/lib/open-status';
@@ -86,7 +88,8 @@ export default async function GuestMenuPage({ params }: Props) {
   ).filter((a): a is Action => a !== null);
 
   return (
-    <Frame>
+    <Frame theme={menu.theme}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(menuJsonLd(menu, `${MENU_ORIGIN}/${locale}/r/${menu.slug}`, locale)) }} />
       <ScanBeacon slug={menu.slug} locale={locale} />
       <header>
         <div className="relative h-[200px] overflow-hidden bg-[#1f1f1f]">
@@ -95,17 +98,17 @@ export default async function GuestMenuPage({ params }: Props) {
           ) : (
             <div
               aria-hidden
-              className="size-full bg-[radial-gradient(circle_at_80%_10%,rgb(219_26_26/0.55),transparent_55%),radial-gradient(circle_at_10%_90%,rgb(217_164_65/0.35),transparent_50%)]"
+              className="size-full bg-[radial-gradient(circle_at_80%_10%,color-mix(in_srgb,var(--brand)_55%,transparent),transparent_55%),radial-gradient(circle_at_10%_90%,color-mix(in_srgb,var(--accent,var(--gold))_35%,transparent),transparent_50%)]"
             />
           )}
           <Link
             href={`/${other}/r/${menu.slug}`}
             hrefLang={other}
             lang={other}
-            aria-label={g.otherLanguageLabel}
             className="absolute end-4 top-4 rounded-full bg-black/55 p-1 text-caption font-semibold text-white backdrop-blur"
           >
             {/* The pill sits at the reading end, but always reads "EN | عربي", as in the design. */}
+            <span className="sr-only">{g.otherLanguageLabel}</span>
             <span dir="ltr" className="flex">
               <span className={locale === 'en' ? 'rounded-full bg-white px-3 py-1 text-[#1c1c1c]' : 'px-3 py-1'}>EN</span>
               <span className={locale === 'ar' ? 'rounded-full bg-white px-3 py-1 text-[#1c1c1c]' : 'px-3 py-1'}>عربي</span>
@@ -119,7 +122,7 @@ export default async function GuestMenuPage({ params }: Props) {
           {(status || address) && (
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
               {status && (
-                <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-semibold', status.open ? 'bg-ok-soft text-ok' : 'bg-gold-soft text-gold')}>
+                <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-semibold', status.open ? 'bg-ok-soft text-ok' : 'bg-gold-soft text-gold-ink')}>
                   <span aria-hidden className="size-1.5 rounded-full bg-current" />
                   {status.text}
                 </span>
@@ -155,6 +158,7 @@ export default async function GuestMenuPage({ params }: Props) {
               ))}
             </nav>
           )}
+          {menu.tour && <TourTeaserCard href={`/${locale}/r/${menu.slug}/tour`} cover={menu.tour.cover.thumbUrl} scenes={menu.tour.scenes} seconds={menu.tour.seconds} t={g} locale={locale} />}
         </div>
       </header>
 
@@ -206,10 +210,18 @@ export default async function GuestMenuPage({ params }: Props) {
   );
 }
 
-/** Phone-width column. On larger screens it sits on a soft backdrop like a printed menu card. */
-function Frame({ children }: { children: React.ReactNode }) {
+/** Phone-width column. On larger screens it sits on a soft backdrop like a printed menu card.
+ *  A theme other than Auto-match replaces the colour tokens for everything inside; Auto-match keeps
+ *  Savora's own, including dark mode. */
+function Frame({ theme, children }: { theme?: Theme; children: React.ReactNode }) {
+  const themed = theme && theme.ref !== 'auto';
   return (
-    <div className="min-h-dvh bg-bg sm:py-10">
+    <div
+      className="min-h-dvh bg-bg text-ink sm:py-10"
+      style={themed ? (themeVars(theme.colors) as React.CSSProperties) : undefined}
+      data-menu-font={themed && theme.font === 'serif' ? 'serif' : undefined}
+      data-bold-prices={theme?.boldPrices ? '' : undefined}
+    >
       <main className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-surface sm:min-h-0 sm:overflow-clip sm:rounded-[28px] sm:border sm:border-line sm:shadow-raised">{children}</main>
     </div>
   );
@@ -219,7 +231,7 @@ function Badge({ initial, logo, className = '' }: { initial: string; logo?: Phot
   return (
     <span
       aria-hidden
-      className={`relative grid size-16 place-items-center overflow-hidden rounded-2xl bg-brand text-heading-m font-bold text-white shadow-[0_10px_24px_rgb(219_26_26/0.3)] ${className}`}
+      className={`relative grid size-16 place-items-center overflow-hidden rounded-2xl bg-brand-fill text-heading-m font-bold text-[var(--on-brand,#fff)] shadow-[0_10px_24px_color-mix(in_srgb,var(--brand)_30%,transparent)] ${className}`}
     >
       {logo ? <img src={logo.url} alt="" className="absolute inset-0 size-full bg-white object-contain p-1" /> : initial}
     </span>
@@ -253,11 +265,11 @@ const ICONS = {
 function Featured({ dish, locale, price, label }: { dish: Dish; locale: Locale; price: string; label: string }) {
   const desc = descriptionOf(dish, locale);
   return (
-    <li className="border-b border-dashed border-line py-4">
+    <li id={`d-${dish.id.slice(0, 8)}`} className="scroll-mt-20 border-b border-dashed border-line py-4">
       <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-surface-2">
         <img src={dish.photo!.url} alt={primaryName(dish, locale)} className="size-full object-cover" />
         <span className="absolute start-3 top-3 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">{label}</span>
-        <span dir="ltr" className="absolute end-3 bottom-3 rounded-lg bg-white px-2.5 py-1 font-mono text-body-s font-semibold text-[#db1a1a] shadow">
+        <span dir="ltr" className="menu-price absolute end-3 bottom-3 rounded-lg bg-surface px-2.5 py-1 font-mono text-body-s font-semibold text-brand shadow">
           {price}
         </span>
       </div>
@@ -270,11 +282,11 @@ function Featured({ dish, locale, price, label }: { dish: Dish; locale: Locale; 
 function Row({ dish, locale, price, last }: { dish: Dish; locale: Locale; price: string; last: boolean }) {
   const desc = descriptionOf(dish, locale);
   return (
-    <li className={`flex items-center gap-4 py-4 ${last ? '' : 'border-b border-dashed border-line'}`}>
+    <li id={`d-${dish.id.slice(0, 8)}`} className={`flex scroll-mt-20 items-center gap-4 py-4 ${last ? '' : 'border-b border-dashed border-line'}`}>
       <div className="min-w-0 flex-1">
         <h3 className="text-title-s font-semibold">{primaryName(dish, locale)}</h3>
         {desc && <p className="mt-0.5 text-body-s text-muted">{desc}</p>}
-        <span dir="ltr" className="mt-2 inline-block rounded-md bg-brand-soft px-2 py-0.5 font-mono text-caption font-semibold text-brand">
+        <span dir="ltr" className="menu-price mt-2 inline-block rounded-md bg-[var(--price-bg,var(--brand-soft))] px-2 py-0.5 font-mono text-caption font-semibold text-brand">
           {price}
         </span>
       </div>

@@ -88,7 +88,7 @@ export function HoursEditor({
                     –
                   </span>
                   <TimeSelect label={`${name} · ${t.closes}`} value={d.to} disabled={disabled} onChange={(to) => set(day, { to })} />
-                  {overnight && <span className="text-[10px] font-semibold text-gold">+1 {t.pastMidnight}</span>}
+                  {overnight && <span className="text-[10px] font-semibold text-gold-ink">+1 {t.pastMidnight}</span>}
                 </span>
               ) : (
                 <span className="ms-auto text-caption font-semibold text-muted">{t.closed}</span>

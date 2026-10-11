@@ -234,7 +234,7 @@ export function SettingsForm({
   const radiusKm = f.radiusM / 1000;
   const rowState = (on: boolean, auto = false) =>
     on ? (
-      <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] uppercase', auto ? 'bg-gold-soft text-gold' : 'bg-ok-soft text-ok')}>
+      <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] uppercase', auto ? 'bg-gold-soft text-gold-ink' : 'bg-ok-soft text-ok')}>
         {auto ? s.auto : s.visible}
       </span>
     ) : (
@@ -299,7 +299,7 @@ export function SettingsForm({
             onClick={() => jump(key)}
             className="inline-flex shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3.5 py-1.5 text-caption font-semibold whitespace-nowrap text-ink-2 hover:border-ink"
           >
-            <span className="font-mono text-[10px] opacity-60">0{i + 1}</span>
+            <span className="font-mono text-[10px] text-muted">0{i + 1}</span>
             {s[`nav${i + 1}` as 'nav1']}
             <span aria-hidden className={cx('size-1.5 rounded-full', sectionDone[key] ? 'bg-ok' : 'bg-gold')} />
             <span className="sr-only">· {sectionDone[key] ? s.done : s.todo}</span>
@@ -517,7 +517,7 @@ export function SettingsForm({
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line p-4">
                 <div className="flex items-center gap-3">
                   <span aria-hidden className="flex h-8 overflow-hidden rounded-lg">
-                    <span className="w-4 bg-brand" />
+                    <span className="w-4 bg-brand-fill" />
                     <span className="w-4 bg-gold" />
                     <span className="w-4 bg-surface-2" />
                   </span>
@@ -577,7 +577,7 @@ export function SettingsForm({
                   className={cx(control(false), 'col-span-3 bg-surface-2 font-mono text-caption text-muted sm:col-span-1')}
                 />
                 <span className="col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto">
-                  {f.pin ? rowState(true, true) : <span className="text-[10px] font-semibold tracking-[0.06em] text-gold uppercase">{s.needsPin}</span>}
+                  {f.pin ? rowState(true, true) : <span className="text-[10px] font-semibold tracking-[0.06em] text-gold-ink uppercase">{s.needsPin}</span>}
                 </span>
               </li>
               {(
@@ -669,7 +669,7 @@ export function SettingsForm({
         >
           {s.discard}
         </button>
-        <button type="button" onClick={save} disabled={state === 'saving'} className="shrink-0 rounded-lg bg-brand px-3.5 py-1.5 text-body-s font-semibold text-white">
+        <button type="button" onClick={save} disabled={state === 'saving'} className="shrink-0 rounded-lg bg-brand-fill px-3.5 py-1.5 text-body-s font-semibold text-white">
           {state === 'saving' ? s.saving : s.save}
         </button>
       </div>

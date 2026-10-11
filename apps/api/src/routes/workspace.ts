@@ -3,7 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireUser } from '../auth/session';
-import { monthlyCents, PLAN_ORDER, PLANS, pausedLocations, rank } from '@savora/shared';
+import { locationLimit, monthlyCents, PLAN_ORDER, PLANS, pausedLocations, rank } from '@savora/shared';
 import { membership } from '../lib/access';
 import { syncSubscription } from '../lib/billing';
 import { slugify, uniqueSlug } from '../lib/slug';
@@ -54,13 +54,13 @@ const AddLocation = z.object({
   brandId: z.string().uuid().optional(),
 });
 
-export function workspaceRoutes(app: FastifyInstance, db: Db, opts: { isStaff: (req: FastifyRequest) => boolean; clock: () => Date }) {
+export function workspaceRoutes(app: FastifyInstance, db: Db, opts: { isStaff: (req: FastifyRequest) => boolean; clock: () => Date; ai: boolean }) {
   app.get('/me', { preHandler: requireUser }, async (req) => {
     const user = req.user!;
     // Plans move with time (a paid month ends, a grace period runs out); settle them on the way in.
     const memberOf = await db.select({ id: schema.memberships.organizationId }).from(schema.memberships).where(eq(schema.memberships.userId, user.id));
     for (const m of memberOf) await syncSubscription(db, m.id, opts.clock());
-    return { user: { ...user, staff: opts.isStaff(req) }, organizations: await loadWorkspace(db, user.id) };
+    return { user: { ...user, staff: opts.isStaff(req) }, organizations: await loadWorkspace(db, user.id), features: { ai: opts.ai } };
   });
 
   // Another branch. Each plan has a location limit; past it the answer says which plan fits.
@@ -71,7 +71,7 @@ export function workspaceRoutes(app: FastifyInstance, db: Db, opts: { isStaff: (
     if (!body.success) return reply.code(400).send({ error: 'invalid', issues: body.error.issues.map((i) => i.path.join('.')) });
     const [org] = await db.select().from(schema.organizations).where(eq(schema.organizations.id, m.organizationId)).limit(1);
     const existing = await db.select({ id: schema.locations.id, currency: schema.locations.currency, timezone: schema.locations.timezone }).from(schema.locations).where(eq(schema.locations.organizationId, m.organizationId));
-    if (existing.length >= PLANS[org!.plan].maxLocations) {
+    if (existing.length >= locationLimit(org!.plan)) {
       const fits = PLAN_ORDER.find((p) => rank(p) > rank(org!.plan) && PLANS[p].maxLocations > existing.length) ?? null;
       return reply.code(402).send({ error: 'upgrade_required', feature: 'locations', plan: fits, max: PLANS[org!.plan].maxLocations });
     }

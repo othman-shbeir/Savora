@@ -1,4 +1,5 @@
-import { fill, type Locale } from '@savora/shared';
+import type { Locale } from '@savora/shared';
+import { fill } from '@savora/shared/format';
 
 /** Plural forms as CLDR names them. English needs one/other; Arabic uses all six. */
 export type PluralForms = { other: string } & Partial<Record<Intl.LDMLPluralRule, string>>;

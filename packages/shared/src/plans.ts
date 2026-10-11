@@ -35,10 +35,21 @@ export const PLANS: Record<PlanId, PlanSpec> = {
 /** Starter's themes: the three essentials of the gallery. */
 export const STARTER_THEME_COUNT = 3;
 
-export const can = (plan: PlanId, feature: Feature) => PLANS[plan].features.includes(feature);
+// Read by the API and the web app (the NEXT_PUBLIC_ prefix makes it visible to browser code too).
+declare const process: { env: Record<string, string | undefined> };
+
+/** Plans can be switched off while testing: NEXT_PUBLIC_PLANS_ENABLED=false unlocks every feature for
+ *  every place, removes location limits and pauses nothing. Billing screens still work. On unless
+ *  explicitly switched off, so a missing setting never gives everything away in production. */
+export const plansEnabled = () => process.env.NEXT_PUBLIC_PLANS_ENABLED !== 'false';
+
+export const can = (plan: PlanId, feature: Feature) => !plansEnabled() || PLANS[plan].features.includes(feature);
+
+/** How many locations a plan allows; unlimited while plans are switched off. */
+export const locationLimit = (plan: PlanId) => (plansEnabled() ? PLANS[plan].maxLocations : Number.POSITIVE_INFINITY);
 
 /** The cheapest plan that unlocks a feature, for "Upgrade to …" prompts. */
-export const planFor = (feature: Feature): PlanId => PLAN_ORDER.find((p) => can(p, feature))!;
+export const planFor = (feature: Feature): PlanId => PLAN_ORDER.find((p) => PLANS[p].features.includes(feature))!;
 
 export const rank = (plan: PlanId) => PLAN_ORDER.indexOf(plan);
 
@@ -91,7 +102,7 @@ export function addMonth(d: Date) {
  *  nothing is deleted. */
 export function pausedLocations<T extends { id: string; createdAt: Date | string }>(locations: T[], plan: PlanId): Set<string> {
   const sorted = [...locations].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  return new Set(sorted.slice(PLANS[plan].maxLocations).map((l) => l.id));
+  return new Set(sorted.slice(locationLimit(plan)).map((l) => l.id));
 }
 
 // ---------- What the billing screen reads ----------

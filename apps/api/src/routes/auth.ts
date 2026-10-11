@@ -71,8 +71,13 @@ export function authRoutes(app: FastifyInstance, db: Db, env: Env, mailer: Maile
     return { user: { id: user.id, email: user.email, name: user.name }, isNew, locale: row.locale };
   });
 
-  // 3) Google: redirect to the consent screen. Only registered when credentials are configured.
-  if (googleEnabled(env)) {
+  // 3) Google: redirect to the consent screen. Without credentials, back to sign-in with a note.
+  if (!googleEnabled(env)) {
+    app.get('/auth/google/start', async (req, reply) => {
+      const locale = Locale.catch('en').parse((req.query as { locale?: string }).locale);
+      return reply.redirect(`${env.WEB_ORIGIN}/${locale}/sign-in?error=google_setup`);
+    });
+  } else {
     const redirectUri = `${env.WEB_ORIGIN}/api/auth/google/callback`;
 
     app.get('/auth/google/start', async (req, reply) => {

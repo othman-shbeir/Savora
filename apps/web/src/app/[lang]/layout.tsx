@@ -2,11 +2,12 @@ import type { Metadata } from 'next';
 import { Poppins, Tajawal } from 'next/font/google';
 import { cookies } from 'next/headers';
 import { dirOf, LOCALES } from '@savora/shared';
+import { SITE_ORIGIN } from '@/lib/site';
 import { getDictionary, getLocale } from './dictionaries';
 import '../globals.css';
 
 const poppins = Poppins({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-poppins', display: 'swap' });
-const tajawal = Tajawal({ subsets: ['arabic'], weight: ['400', '500', '700', '800'], variable: '--font-tajawal', display: 'swap' });
+const tajawal = Tajawal({ subsets: ['arabic'], weight: ['400', '500', '700'], variable: '--font-tajawal', display: 'swap' });
 
 /** Set by the theme switch and read here, so pages arrive already themed: no light flash for
  *  dark-mode users, and no inline script (React warns whenever the root layout re-renders one). */
@@ -18,7 +19,13 @@ export async function generateStaticParams() {
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getDictionary();
-  return { title: { default: t.meta.title, template: `%s · ${t.meta.title}` }, description: t.meta.description };
+  return {
+    metadataBase: new URL(SITE_ORIGIN),
+    title: { default: t.meta.title, template: `%s · ${t.meta.title}` },
+    description: t.meta.description,
+    openGraph: { siteName: 'Savora', type: 'website' },
+    twitter: { card: 'summary_large_image' },
+  };
 }
 
 export default async function RootLayout({ children }: LayoutProps<'/[lang]'>) {

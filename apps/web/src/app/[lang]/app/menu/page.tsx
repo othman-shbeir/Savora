@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { can } from '@savora/shared';
 import { AppShell } from '@/components/app-shell';
 import { MenuEditor } from '@/components/menu/menu-editor';
 import { ButtonLink } from '@/components/ui/button';
@@ -15,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 /** The current location's draft menu: start points, publishing, health checks and the item list. */
 export default async function MenuEditorPage() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
-  const { ctx, org, shell } = await requireWorkspace(locale);
+  const { ctx, org, me, shell } = await requireWorkspace(locale);
   const e = t.editor;
   const draft = ctx.location ? await getMenu(ctx.location.id) : null;
   if (ctx.location && !draft) notFound();
@@ -47,6 +48,7 @@ export default async function MenuEditorPage() {
           draft={draft}
           t={e}
           locale={locale}
+          reader={{ allowed: can(org.plan, 'menuImport'), ai: me.features.ai }}
           brand={{
             name: brand ? nameOf(brand, locale) : nameOf(org, locale),
             tagline: brand ? (locale === 'ar' ? brand.taglineAr : brand.taglineEn) : null,

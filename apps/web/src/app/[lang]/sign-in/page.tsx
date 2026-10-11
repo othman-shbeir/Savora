@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { EmailSignIn } from '@/components/auth/email-sign-in';
 import { LocaleSwitch } from '@/components/locale-switch';
 import { Logo } from '@/components/ui/logo';
-import { getMe, getProviders } from '@/lib/api';
+import { getMe } from '@/lib/api';
 import { getDictionary, getLocale } from '../dictionaries';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -23,7 +24,7 @@ function GoogleMark() {
 }
 
 export default async function SignInPage({ searchParams }: PageProps<'/[lang]/sign-in'>) {
-  const [t, locale, me, providers, sp] = await Promise.all([getDictionary(), getLocale(), getMe().catch(() => null), getProviders(), searchParams]);
+  const [t, locale, me, sp] = await Promise.all([getDictionary(), getLocale(), getMe().catch(() => null), searchParams]);
   if (me) redirect(`/${locale}/app`);
   const a = t.auth;
 
@@ -66,30 +67,44 @@ export default async function SignInPage({ searchParams }: PageProps<'/[lang]/si
               </p>
             )}
 
-            {providers.google && (
-              <>
-                <a
-                  href={`/api/auth/google/start?locale=${locale}`}
-                  className="mt-8 flex h-12 items-center justify-center gap-2.5 rounded-xl border border-line-2 bg-surface text-body-m font-semibold transition-colors hover:bg-surface-2"
-                >
-                  <GoogleMark />
-                  {a.google}
-                </a>
-                <div className="my-6 flex items-center gap-3.5 text-caption text-muted">
-                  <span className="h-px flex-1 bg-line" />
-                  {a.or}
-                  <span className="h-px flex-1 bg-line" />
-                </div>
-              </>
+            {sp.error === 'google_setup' && (
+              <p role="alert" className="mt-6 rounded-xl bg-gold-soft px-4 py-3 text-body-s">
+                {a.googleSetup}
+              </p>
             )}
 
-            <div className={providers.google ? '' : 'mt-8'}>
-              <EmailSignIn t={a} locale={locale} />
+            <a
+              href={`/api/auth/google/start?locale=${locale}`}
+              className="mt-8 flex h-12 items-center justify-center gap-2.5 rounded-xl border border-line-2 bg-surface text-body-m font-semibold transition-colors hover:bg-surface-2"
+            >
+              <GoogleMark />
+              {a.google}
+            </a>
+            <div className="my-6 flex items-center gap-3.5 text-caption text-muted">
+              <span className="h-px flex-1 bg-line" />
+              {a.or}
+              <span className="h-px flex-1 bg-line" />
             </div>
+
+            <EmailSignIn t={a} locale={locale} />
           </div>
         </div>
 
-        <p className="text-center text-caption text-muted">{a.terms}</p>
+        <p className="text-center text-caption text-muted">
+          {a.terms.split(/(\{terms\}|\{privacy\})/).map((part, i) =>
+            part === '{terms}' ? (
+              <Link key={i} href={`/${locale}/terms`} className="font-medium text-ink-2 underline underline-offset-2 hover:text-brand">
+                {a.termsLink}
+              </Link>
+            ) : part === '{privacy}' ? (
+              <Link key={i} href={`/${locale}/privacy`} className="font-medium text-ink-2 underline underline-offset-2 hover:text-brand">
+                {a.privacyLink}
+              </Link>
+            ) : (
+              part
+            ),
+          )}
+        </p>
       </section>
     </div>
   );

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { SignOutButton } from '@/components/sign-out-button';
 import { StaffBilling, type StaffData } from '@/components/staff/staff-billing';
 import { Overline } from '@/components/ui/card';
 import { Logo } from '@/components/ui/logo';
@@ -27,7 +28,10 @@ export default async function StaffPage() {
         <Link href={`/${locale}/app`}>
           <Logo width={96} />
         </Link>
-        <span className="rounded-full border border-dashed border-line-2 px-3 py-1 text-caption font-semibold text-muted">{t.nav.staff}</span>
+        <div className="flex items-center gap-4">
+          <span className="rounded-full border border-dashed border-line-2 px-3 py-1 text-caption font-semibold text-muted">{t.nav.staff}</span>
+          <SignOutButton label={t.shell.signOut} locale={locale} />
+        </div>
       </header>
       <main className="mx-auto max-w-6xl px-5 py-10">
         <Overline>{t.nav.staff}</Overline>

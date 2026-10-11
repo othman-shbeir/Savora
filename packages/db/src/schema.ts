@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { Closure, MenuSnapshot, WeekHours } from '@savora/shared';
+import type { Closure, MenuSnapshot, ThemeColors, TourQuality, TourSnapshot, WeekHours } from '@savora/shared';
 import { boolean, check, doublePrecision, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -111,6 +111,8 @@ export const locations = pgTable('locations', {
   phoneIsWhatsapp: boolean('phone_is_whatsapp').notNull().default(false),
   orderUrl: text('order_url'),
   reservationUrl: text('reservation_url'),
+  /** The guest menu's look: "auto", a preset id, or "custom:<uuid>". Applies at once, no publish. */
+  themeRef: text('theme_ref').notNull().default('auto'),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('locations_slug_key').on(sql`lower(${t.slug})`), index('locations_org_idx').on(t.organizationId), index('locations_brand_idx').on(t.brandId)]);
 
@@ -249,3 +251,58 @@ export const invoices = pgTable('invoices', {
   requestId: uuid('request_id').references(() => planRequests.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('invoices_number_key').on(t.number), index('invoices_org_idx').on(t.organizationId, t.createdAt)]);
+
+// ---------- Menu themes ----------
+
+/** A theme made with the Theme assistant, available to every location of the organization. */
+export const customThemes = pgTable('custom_themes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  nameEn: text('name_en').notNull(),
+  nameAr: text('name_ar'),
+  colors: jsonb('colors').$type<ThemeColors>().notNull(),
+  font: text('font').notNull().default('sans'),
+  boldPrices: boolean('bold_prices').notNull().default(false),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [index('custom_themes_org_idx').on(t.organizationId)]);
+
+// ---------- Virtual trial ----------
+
+/** One per location once a scene is added. The draft is the scenes below; publishing copies them. */
+export const tours = pgTable('tours', {
+  locationId: uuid('location_id').primaryKey().references(() => locations.id, { onDelete: 'cascade' }),
+  published: jsonb('published').$type<TourSnapshot>(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** A photo of the place, in tour order. */
+export const tourScenes = pgTable('tour_scenes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  locationId: uuid('location_id').notNull().references(() => locations.id, { onDelete: 'cascade' }),
+  photoId: uuid('photo_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
+  nameEn: text('name_en'),
+  nameAr: text('name_ar'),
+  position: integer('position').notNull(),
+  seconds: integer('seconds').notNull().default(10),
+  quality: jsonb('quality').$type<TourQuality>().notNull(),
+  createdAt: createdAt(),
+}, (t) => [index('tour_scenes_location_idx').on(t.locationId, t.position)]);
+
+/** Something guests can tap on a scene: a dish, a note, or a way to another scene. */
+export const tourSpots = pgTable('tour_spots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sceneId: uuid('scene_id').notNull().references(() => tourScenes.id, { onDelete: 'cascade' }),
+  x: doublePrecision('x').notNull(),
+  y: doublePrecision('y').notNull(),
+  kind: text('kind', { enum: ['dish', 'info', 'scene'] }).notNull(),
+  labelEn: text('label_en'),
+  labelAr: text('label_ar'),
+  noteEn: text('note_en'),
+  noteAr: text('note_ar'),
+  // A deleted dish or scene removes the spot: a spot that leads nowhere is worse than none.
+  itemId: uuid('item_id').references(() => menuItems.id, { onDelete: 'cascade' }),
+  targetSceneId: uuid('target_scene_id').references((): AnyPgColumn => tourScenes.id, { onDelete: 'cascade' }),
+  createdAt: createdAt(),
+}, (t) => [index('tour_spots_scene_idx').on(t.sceneId)]);

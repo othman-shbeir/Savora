@@ -12,6 +12,7 @@ import type { EditorText } from './menu-editor';
 export function PasteReviewDialog({
   open,
   parsed,
+  notes,
   currency,
   t,
   locale,
@@ -20,6 +21,8 @@ export function PasteReviewDialog({
 }: {
   open: boolean;
   parsed: ImportPayload;
+  /** From reading a photo: things worth checking before adding. */
+  notes?: string[];
   currency: string;
   t: EditorText;
   locale: Locale;
@@ -60,6 +63,16 @@ export function PasteReviewDialog({
         <p className="rounded-xl bg-gold-soft p-4 text-body-s">{t.reviewNothing}</p>
       ) : (
         <div className="grid gap-5">
+          {notes && notes.length > 0 && (
+            <div className="rounded-xl bg-gold-soft p-4">
+              <p className="text-caption font-semibold">{t.readNotes}</p>
+              <ul className="mt-1 list-disc ps-4 text-body-s">
+                {notes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {parsed.categories.map((c, ci) => (
             <section key={ci}>
               <h3 className="flex items-baseline justify-between gap-3 border-b border-line pb-2">

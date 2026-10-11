@@ -53,7 +53,7 @@ export default async function OverviewPage() {
 
       <Card className="mt-7 flex flex-wrap items-center justify-between gap-6 p-6">
         <div className="flex items-start gap-4">
-          <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand text-title-m font-bold text-white">
+          <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-fill text-title-m font-bold text-white">
             {nameOf(org, locale).slice(0, 1)}
           </span>
           <div>

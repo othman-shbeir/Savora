@@ -1,7 +1,9 @@
 import { schema, type Db } from '@savora/db';
 import { can, directionsUrl, photoOf, type PublicMenu } from '@savora/shared';
-import { locationPaused } from '../lib/billing';
+import { locationPaused, pausedIn } from '../lib/billing';
 import { desc, eq, sql } from 'drizzle-orm';
+import { resolveTheme } from './themes';
+import { tourTeaser } from './tour';
 import type { FastifyInstance } from 'fastify';
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/i;
@@ -54,8 +56,25 @@ export function publicRoutes(app: FastifyInstance, db: Db) {
       version: latest.version,
       publishedAt: latest.publishedAt.toISOString(),
       menu: latest.content,
+      theme: await resolveTheme(db, location, org!.plan),
+      tour: await tourTeaser(db, location, org!.plan),
     };
     // Guests always get the newest version; a short shared cache absorbs bursts at busy tables.
     return reply.header('cache-control', 'public, max-age=0, s-maxage=30, stale-while-revalidate=60').send(body);
+  });
+
+  // For the sitemap: every menu guests can open, with when it last changed.
+  app.get('/public/sitemap', async (_req, reply) => {
+    const rows = await db
+      .select({ id: schema.locations.id, slug: schema.locations.slug, organizationId: schema.locations.organizationId, plan: schema.organizations.plan, updatedAt: sql<string>`max(${schema.menuVersions.publishedAt})` })
+      .from(schema.locations)
+      .innerJoin(schema.organizations, eq(schema.organizations.id, schema.locations.organizationId))
+      .innerJoin(schema.menuVersions, eq(schema.menuVersions.locationId, schema.locations.id))
+      .where(eq(schema.locations.status, 'live'))
+      .groupBy(schema.locations.id, schema.organizations.plan);
+    const paused = new Set<string>();
+    for (const org of new Map(rows.map((r) => [r.organizationId, r.plan]))) for (const id of await pausedIn(db, org[0], org[1])) paused.add(id);
+    const menus = rows.filter((r) => !paused.has(r.id)).map((r) => ({ slug: r.slug, updatedAt: new Date(r.updatedAt).toISOString() }));
+    return reply.header('cache-control', 'public, max-age=0, s-maxage=3600').send({ menus });
   });
 }

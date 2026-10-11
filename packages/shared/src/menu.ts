@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { Closure, WeekHours } from './location';
+import type { Theme } from './themes';
+import type { TourTeaser } from './tour';
 
 // Menu shapes shared by the API (which stores and validates them) and the web editor.
 // Prices are whole minor units (agorot, fils, cents) so sums and comparisons are exact.
@@ -103,14 +105,7 @@ export function parsePrice(input: string): number | null {
   return Math.round(Number(s) * 100);
 }
 
-/** 1800 -> "₪18.00". Western digits in both languages, matching the designs. */
-export function formatPrice(minor: number, currency: string) {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency, currencyDisplay: 'narrowSymbol' }).format(minor / 100);
-  } catch {
-    return `${(minor / 100).toFixed(2)} ${currency}`;
-  }
-}
+export { formatPrice } from './format';
 
 /** Minor units back to the plain number shown in a price field: 1800 -> "18", 1850 -> "18.50". */
 export function priceInput(minor: number) {
@@ -265,4 +260,8 @@ export type PublicMenu = {
   version: number;
   publishedAt: string;
   menu: MenuSnapshot;
+  /** The look chosen in Menu themes; applies at once, without publishing. */
+  theme: Theme;
+  /** The Virtual trial, when one is published. */
+  tour: TourTeaser | null;
 };

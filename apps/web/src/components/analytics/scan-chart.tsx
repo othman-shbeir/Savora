@@ -111,7 +111,7 @@ export function ScanChart({ bars, peakKey, average, t, locale }: { bars: ChartBa
                       className="flex h-full w-full items-end outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
                     >
                       <span
-                        className={cx('block w-full rounded-t-[4px] transition-opacity', isPeak ? 'bg-brand' : 'bg-gold', !isPeak && (hover === i ? 'opacity-100' : 'opacity-80'))}
+                        className={cx('block w-full rounded-t-[4px] transition-opacity', isPeak ? 'bg-brand-fill' : 'bg-gold', !isPeak && (hover === i ? 'opacity-100' : 'opacity-80'))}
                         // A sliver for zero days, so the day still reads as "measured, nothing".
                         style={{ height: b.scans ? pct(b.scans) : '2px' }}
                       />

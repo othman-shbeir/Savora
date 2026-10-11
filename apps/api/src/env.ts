@@ -7,6 +7,8 @@ const Env = z.object({
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   SESSION_SECRET: z.string().min(16),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /** Shown by /health so monitors can tell which build is running (e.g. the git commit). */
+  APP_VERSION: z.string().optional().default('dev'),
   SEED_DEMO: z
     .string()
     .optional()
@@ -25,13 +27,33 @@ const Env = z.object({
   BILLING_ACCOUNT_NAME: z.string().optional().default(''),
   BILLING_IBAN: z.string().optional().default(''),
   BILLING_CONTACT_PHONE: z.string().optional().default(''),
+  /** Outgoing email (sign-in links). Empty prints emails to the API console, which only suits development. */
+  SMTP_URL: z.string().optional().default(''),
+  /** The sender, e.g. "Savora <hello@savora.menu>". */
+  MAIL_FROM: z.string().optional().default('Savora <no-reply@savora.menu>'),
   /** Uploaded photos. Empty means ~/.savora/media. */
   MEDIA_DIR: z.string().optional().default(''),
+  /** Turns on the AI features (reading a menu from photos, the Theme assistant). Empty: they say "unavailable". */
+  OPENROUTER_API_KEY: z.string().optional().default(''),
+  /** Any OpenRouter model that takes images and PDFs and supports structured outputs. Empty: the default in lib/ai.ts. */
+  OPENROUTER_MODEL: z.string().optional().default(''),
   GOOGLE_CLIENT_ID: z.string().optional().default(''),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
 });
 
 export type Env = z.infer<typeof Env>;
-export const loadEnv = (source: NodeJS.ProcessEnv = process.env): Env => Env.parse(source);
+
+/** Production refuses settings that are fine on a laptop but unsafe or lossy on a server. */
+const Production = Env.superRefine((e, ctx) => {
+  if (e.NODE_ENV !== 'production') return;
+  const fail = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
+  if (e.SESSION_SECRET.length < 32) fail('SESSION_SECRET', 'use at least 32 random characters in production');
+  if (!e.WEB_ORIGIN.startsWith('https://')) fail('WEB_ORIGIN', 'must be https:// in production (cookies are Secure)');
+  if (!/^postgres(ql)?:\/\//.test(e.DATABASE_URL)) fail('DATABASE_URL', 'production needs a real Postgres database (postgres://…), not PGlite');
+  if (e.SEED_DEMO) fail('SEED_DEMO', 'the demo workspace must not be seeded in production');
+  if (!e.SMTP_URL) fail('SMTP_URL', 'production needs an email service, or owners never get their sign-in links');
+});
+
+export const loadEnv = (source: NodeJS.ProcessEnv = process.env): Env => Production.parse(source);
 
 export const googleEnabled = (env: Env) => Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);

@@ -58,24 +58,40 @@ describe('OpenRouter provider', () => {
     await expect(read({ status: 400, body: { error: { message: 'bad schema' } } })).rejects.toThrow('OpenRouter 400: bad schema');
   });
 
-  it('sends the assistant conversation with earlier options as JSON', async () => {
-    const design = { reply: 'Three directions.', options: [] };
+  it('sends the assistant conversation with numbered photos and earlier designs as JSON', async () => {
+    const design = { reply: 'Three directions.', logoPhoto: 2, coverPhoto: null, options: [] };
     const f = fakeFetch(ok(design));
     const ai = openRouterProvider('k', { fetch: f.fn });
-    await ai.designThemes({
-      brand: { nameEn: 'Salt & Stem', nameAr: null, taglineEn: null, current: { bg: '#F5F5F5', surface: '#FFFFFF', primary: '#DB1A1A', accent: '#D9A441', ink: '#242424', muted: '#6E6E6E' } },
+    const style = { font: 'rounded', corners: 'round', header: 'plain', layout: 'compact', boldPrices: false } as const;
+    const answer = await ai.designThemes({
+      brand: {
+        nameEn: 'Salt & Stem',
+        nameAr: null,
+        taglineEn: null,
+        current: { bg: '#F5F5F5', surface: '#FFFFFF', primary: '#DB1A1A', accent: '#D9A441', ink: '#242424', muted: '#6E6E6E' },
+        style: { ...style, font: 'sans' },
+        hasLogo: true,
+        hasCover: false,
+      },
       locale: 'ar',
       turns: [
         { role: 'user', text: 'warmer', photo: { mediaType: 'image/webp', data: Buffer.from('w') } },
-        { role: 'assistant', text: 'Here', options: [{ nameEn: 'Dawn', nameAr: 'فجر', noteEn: '', noteAr: '', colors: { bg: '#000000', surface: '#111111', primary: '#FF0000', accent: '#00FF00', ink: '#FFFFFF', muted: '#AAAAAA' }, font: 'sans', boldPrices: false }] },
-        { role: 'user', text: 'darker' },
+        { role: 'assistant', text: 'Here', options: [{ nameEn: 'Dawn', nameAr: 'فجر', noteEn: '', noteAr: '', colors: { bg: '#000000', surface: '#111111', primary: '#FF0000', accent: '#00FF00', ink: '#FFFFFF', muted: '#AAAAAA' }, ...style }] },
+        { role: 'user', text: 'use this as my logo', photo: { mediaType: 'image/webp', data: Buffer.from('l') } },
       ],
     });
+    expect(answer.logoPhoto).toBe(2);
     const m = f.sent().messages;
     expect(m.map((x: { role: string }) => x.role)).toEqual(['system', 'user', 'assistant', 'user']);
-    expect(m[0].content).toContain('written in Arabic');
-    expect(m[1].content[0].image_url.url).toMatch(/^data:image\/webp;base64,/);
-    expect(JSON.parse(m[2].content).options[0].nameEn).toBe('Dawn');
+    // Replies follow the owner's language, with the app's language as the fallback.
+    expect(m[0].content).toContain("language of the owner's latest message");
+    expect(m[0].content).toContain("when that isn't clear, in Arabic");
+    expect(m[0].content).toContain('"font":"sans"');
+    // Each photo is labelled with its number just before it.
+    expect(m[1].content[0]).toEqual({ type: 'text', text: 'Photo 1:' });
+    expect(m[1].content[1].image_url.url).toMatch(/^data:image\/webp;base64,/);
+    expect(m[3].content[0]).toEqual({ type: 'text', text: 'Photo 2:' });
+    expect(JSON.parse(m[2].content).options[0]).toMatchObject({ nameEn: 'Dawn', font: 'rounded', layout: 'compact', header: 'plain' });
     expect(f.sent().response_format.json_schema.name).toBe('theme_options');
   });
 });

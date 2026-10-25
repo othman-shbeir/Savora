@@ -37,6 +37,11 @@ const Env = z.object({
   OPENROUTER_API_KEY: z.string().optional().default(''),
   /** Any OpenRouter model that takes images and PDFs and supports structured outputs. Empty: the default in lib/ai.ts. */
   OPENROUTER_MODEL: z.string().optional().default(''),
+  /** Builds 3D walk-throughs from owners' videos (KIRI Engine, docs.kiriengine.app). Empty: in
+   *  development a stand-in builds a sample room; in production the 3D option says "unavailable". */
+  KIRI_API_KEY: z.string().optional().default(''),
+  /** "kiri", "demo" (the stand-in) or "off". Empty picks kiri with a key, demo in development. */
+  SPACE_BUILDER: z.enum(['', 'kiri', 'demo', 'off']).optional().default(''),
   GOOGLE_CLIENT_ID: z.string().optional().default(''),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
 });
@@ -52,8 +57,18 @@ const Production = Env.superRefine((e, ctx) => {
   if (!/^postgres(ql)?:\/\//.test(e.DATABASE_URL)) fail('DATABASE_URL', 'production needs a real Postgres database (postgres://…), not PGlite');
   if (e.SEED_DEMO) fail('SEED_DEMO', 'the demo workspace must not be seeded in production');
   if (!e.SMTP_URL) fail('SMTP_URL', 'production needs an email service, or owners never get their sign-in links');
+  if (e.SPACE_BUILDER === 'demo') fail('SPACE_BUILDER', 'the demo stand-in builds a sample room, not the owner’s place');
+  if (e.SPACE_BUILDER === 'kiri' && !e.KIRI_API_KEY) fail('KIRI_API_KEY', 'SPACE_BUILDER=kiri needs an API key');
 });
 
 export const loadEnv = (source: NodeJS.ProcessEnv = process.env): Env => Production.parse(source);
 
 export const googleEnabled = (env: Env) => Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+
+/** Which service builds 3D walk-throughs, if any. */
+export function spaceBuilderKind(env: Env): 'kiri' | 'demo' | null {
+  if (env.SPACE_BUILDER === 'off') return null;
+  if (env.SPACE_BUILDER) return env.SPACE_BUILDER;
+  if (env.KIRI_API_KEY) return 'kiri';
+  return env.NODE_ENV === 'development' ? 'demo' : null;
+}

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Photo } from './menu';
+import type { PublicSpace, SpaceDraft } from './space';
 
 // Virtual trial (عيش اللحظة): a walk through the place built from the owner's photos. Each photo is a
 // scene; scenes play in order as a guided tour; spots on a scene open a dish, a note, or another scene.
@@ -95,11 +96,15 @@ export type TourDraft = {
   hasChanges: boolean;
   /** For linking spots: the draft menu's dishes. */
   dishes: Array<{ id: string; nameEn: string | null; nameAr: string | null; priceMinor: number; photo: Photo | null }>;
+  /** The 3D walk-through, built from a video. Published separately from the photo tour. */
+  space: SpaceDraft;
 };
 
-/** What guests get. A spot whose dish left the menu is dropped. */
+/** What guests get: the 3D walk-through when there is one, and the photo tour (possibly empty)
+ *  as its fallback. A spot whose dish left the menu is dropped. */
 export type PublicTour = {
   slug: string;
+  space: PublicSpace | null;
   name: { en: string; ar: string | null };
   currency: string;
   scenes: Array<{
@@ -114,8 +119,8 @@ export type PublicTour = {
   }>;
 };
 
-/** On the guest menu, above the dishes. */
-export type TourTeaser = { scenes: number; seconds: number; cover: Photo };
+/** On the guest menu, above the dishes. kind "space" is the 3D walk-through. */
+export type TourTeaser = { kind: 'space' | 'photos'; scenes: number; seconds: number; cover: Photo | null };
 
 export const MIN_SCENES = 2;
 export const MAX_SCENES = 40;

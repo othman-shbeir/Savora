@@ -57,6 +57,20 @@
       "when": 1791440186386,
       "tag": "0007_tours",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792654447518,
+      "tag": "0008_theme_style",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792665223478,
+      "tag": "0009_tour_spaces",
+      "breakpoints": true
     }
   ]
 }

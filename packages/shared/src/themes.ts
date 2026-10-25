@@ -20,10 +20,41 @@ export type ThemeColors = {
   muted: string;
 };
 
-export type ThemeFont = 'sans' | 'serif';
+/** Heading typeface. Each one covers Latin and Arabic: sans is Poppins and Tajawal, serif
+ *  Playfair Display and Amiri, rounded Baloo Bhaijaan 2, geometric Reem Kufi. */
+export type ThemeFont = 'sans' | 'serif' | 'rounded' | 'geometric';
+/** Corner radius across cards, buttons, photos and price chips. */
+export type ThemeCorners = 'soft' | 'round' | 'sharp';
+/** The top of the menu: the cover photo, a band of the primary colour, or no banner at all. */
+export type ThemeHeader = 'photo' | 'color' | 'plain';
+/** How dishes are laid out: rows with thumbnails, large photo cards, or a text-only printed menu. */
+export type ThemeLayout = 'list' | 'cards' | 'compact';
 export type ThemeTag = 'light' | 'dark' | 'warm' | 'bold';
 
-export type Theme = {
+export const THEME_FONTS = ['sans', 'serif', 'rounded', 'geometric'] as const satisfies readonly ThemeFont[];
+export const THEME_CORNERS = ['soft', 'round', 'sharp'] as const satisfies readonly ThemeCorners[];
+export const THEME_HEADERS = ['photo', 'color', 'plain'] as const satisfies readonly ThemeHeader[];
+export const THEME_LAYOUTS = ['list', 'cards', 'compact'] as const satisfies readonly ThemeLayout[];
+
+/** Everything about a theme except its colours. */
+export type ThemeStyle = { font: ThemeFont; boldPrices: boolean; corners: ThemeCorners; header: ThemeHeader; layout: ThemeLayout };
+
+/** The look every preset has, and what older custom themes read as. */
+export const DEFAULT_STYLE: ThemeStyle = { font: 'sans', boldPrices: false, corners: 'soft', header: 'photo', layout: 'list' };
+
+/** Reads stored values defensively: anything unknown becomes the default. */
+export function styleOf(raw: Partial<Record<keyof ThemeStyle, unknown>>): ThemeStyle {
+  const one = <T extends string>(list: readonly T[], v: unknown, d: T): T => (list.includes(v as T) ? (v as T) : d);
+  return {
+    font: one(THEME_FONTS, raw.font, DEFAULT_STYLE.font),
+    boldPrices: raw.boldPrices === true,
+    corners: one(THEME_CORNERS, raw.corners, DEFAULT_STYLE.corners),
+    header: one(THEME_HEADERS, raw.header, DEFAULT_STYLE.header),
+    layout: one(THEME_LAYOUTS, raw.layout, DEFAULT_STYLE.layout),
+  };
+}
+
+export type Theme = ThemeStyle & {
   /** "auto", a preset id, or "custom:<uuid>". */
   ref: string;
   nameEn: string;
@@ -32,8 +63,6 @@ export type Theme = {
   descAr: string;
   tier: 'free' | 'growth' | 'custom';
   colors: ThemeColors;
-  font: ThemeFont;
-  boldPrices: boolean;
   tags: ThemeTag[];
 };
 
@@ -45,8 +74,8 @@ const preset = (ref: string, tier: 'free' | 'growth', nameEn: string, nameAr: st
   descEn,
   descAr,
   colors: { bg: c[0]!, surface: c[1]!, primary: c[2]!, accent: c[3]!, ink: c[4]!, muted: c[5]! },
+  ...DEFAULT_STYLE,
   font,
-  boldPrices: false,
   tags,
 });
 
@@ -167,21 +196,30 @@ export function themeVars(c: ThemeColors): Record<string, string> {
 
 const hex = z.string().regex(HEX);
 export const ThemeColorsInput = z.object({ bg: hex, surface: hex, primary: hex, accent: hex, ink: hex, muted: hex });
+export const ThemeStyleInput = z.object({
+  font: z.enum(THEME_FONTS).default(DEFAULT_STYLE.font),
+  boldPrices: z.boolean().default(DEFAULT_STYLE.boldPrices),
+  corners: z.enum(THEME_CORNERS).default(DEFAULT_STYLE.corners),
+  header: z.enum(THEME_HEADERS).default(DEFAULT_STYLE.header),
+  layout: z.enum(THEME_LAYOUTS).default(DEFAULT_STYLE.layout),
+});
 export const CustomThemeInput = z.object({
   nameEn: z.string().trim().min(1).max(40),
   nameAr: z.string().trim().max(40).nullish().transform((v) => v || null),
   colors: ThemeColorsInput,
-  font: z.enum(['sans', 'serif']).default('sans'),
-  boldPrices: z.boolean().default(false),
+  ...ThemeStyleInput.shape,
 });
 export type CustomThemePayload = z.input<typeof CustomThemeInput>;
 
-/** One message in a Theme assistant conversation, as the client keeps it. */
-export type AssistantTurn =
-  | { role: 'user'; text: string; photoId?: string | null }
-  | { role: 'assistant'; text: string; options: Array<Pick<Theme, 'nameEn' | 'nameAr' | 'colors' | 'font' | 'boldPrices'> & { noteEn: string; noteAr: string }> };
+/** One design the assistant proposes: a full look, plus notes in the conversation's language. */
+export type AssistantDesign = Pick<Theme, 'nameEn' | 'nameAr' | 'colors'> & ThemeStyle & { noteEn: string; noteAr: string };
 
-export type AssistantOption = Extract<AssistantTurn, { role: 'assistant' }>['options'][number] & { contrast: ContrastReport; adjusted: boolean };
+/** One message in a Theme assistant conversation, as the client keeps it. */
+export type AssistantTurn = { role: 'user'; text: string; photoId?: string | null } | { role: 'assistant'; text: string; options: AssistantDesign[] };
+
+/** An option as the API returns it: checked for contrast, and carrying any of the owner's photos
+ *  the assistant chose as the logo or the cover. Those apply together with the theme. */
+export type AssistantOption = AssistantDesign & { contrast: ContrastReport; adjusted: boolean; logo: Photo | null; cover: Photo | null };
 
 /** A theme as Menu themes lists it: whether the plan allows it, and how it reads. */
 export type ThemeEntry = Theme & { allowed: boolean; contrast: ContrastReport };
@@ -196,6 +234,10 @@ export type ThemesOverview = {
   custom: ThemeEntry[];
   /** For the live preview. */
   brand: { nameEn: string; nameAr: string | null; taglineEn: string | null; taglineAr: string | null; logo: Photo | null };
+  /** This location's header photo, for the live preview. */
+  cover: Photo | null;
+  /** Branches sharing the brand's logo; a new logo shows on all of them. */
+  brandBranches: number;
   locations: number;
   canShare: boolean;
   canDesign: boolean;

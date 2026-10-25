@@ -6,11 +6,12 @@ import type { Db } from '@savora/db';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyError } from 'fastify';
 import { registerSessions } from './auth/session';
-import type { Env } from './env';
+import { spaceBuilderKind, type Env } from './env';
 import { openRouterProvider, type AiProvider } from './lib/ai';
 import { manualProvider } from './lib/billing';
 import { nominatim, type Geocoder } from './lib/geocode';
 import { diskStore, MAX_UPLOAD_BYTES, type MediaStore } from './lib/media';
+import { demoSpaceBuilder, diskModelStore, kiriSpaceBuilder, type ModelStore, type SpaceBuilder } from './lib/space';
 import { consoleMailer, smtpMailer, type Mailer } from './mailer';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
@@ -18,12 +19,17 @@ import { menuRoutes } from './routes/menu';
 import { publicRoutes } from './routes/public';
 import { scanRoutes } from './routes/scans';
 import { settingsRoutes } from './routes/settings';
+import { spaceRoutes } from './routes/space';
 import { themeRoutes } from './routes/themes';
 import { tourRoutes } from './routes/tour';
 import { workspaceRoutes } from './routes/workspace';
 
 /** Builds the API without listening, so tests can drive it with app.inject(). */
-export async function buildApp(env: Env, db: Db, opts: { mailer?: Mailer; store?: MediaStore; clock?: () => Date; geocode?: Geocoder; ai?: AiProvider | null } = {}) {
+export async function buildApp(
+  env: Env,
+  db: Db,
+  opts: { mailer?: Mailer; store?: MediaStore; clock?: () => Date; geocode?: Geocoder; ai?: AiProvider | null; models?: ModelStore; builder?: SpaceBuilder | null } = {},
+) {
   const app = Fastify({ logger: env.NODE_ENV === 'test' ? false : { level: 'info' }, trustProxy: env.TRUST_PROXY.split(',').map((s) => s.trim()) });
   await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
   await app.register(cookie, { secret: env.SESSION_SECRET });
@@ -73,6 +79,19 @@ export async function buildApp(env: Env, db: Db, opts: { mailer?: Mailer; store?
   scanRoutes(app, db, env, clock);
   settingsRoutes(app, db, opts.geocode ?? nominatim(env.WEB_ORIGIN));
   themeRoutes(app, db, store, ai);
-  tourRoutes(app, db, store);
+  const defaults = spaceServices(env);
+  const builder = opts.builder !== undefined ? opts.builder : defaults.builder;
+  const models = opts.models ?? defaults.models;
+  tourRoutes(app, db, store, Boolean(builder));
+  spaceRoutes(app, db, { store, models, builder });
   return app;
+}
+
+/** The service that builds 3D walk-throughs (if any) and where their models are kept. */
+export function spaceServices(env: Env): { builder: SpaceBuilder | null; models: ModelStore } {
+  const kind = spaceBuilderKind(env);
+  return {
+    builder: kind === 'kiri' ? kiriSpaceBuilder(env.KIRI_API_KEY) : kind === 'demo' ? demoSpaceBuilder() : null,
+    models: diskModelStore(env.MEDIA_DIR || undefined),
+  };
 }

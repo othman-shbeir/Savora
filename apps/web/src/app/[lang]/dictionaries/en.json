@@ -827,7 +827,7 @@
     "deleted": "Theme deleted.",
     "teaserOverline": "Theme assistant · Growth",
     "teaserTitle": "Describe a mood. Get a theme made for your place.",
-    "teaserBody": "Share words, a photo of your space or your logo. The assistant builds colours and type that pass contrast checks.",
+    "teaserBody": "Share words, a photo of your space or your logo. The assistant designs the colours, type and layout, and every design passes contrast checks.",
     "teaserCta": "Upgrade to Growth",
     "teaserPrice": "$9 / location / month",
     "teaserUser": "Warm and calm, like our morning light.",
@@ -844,8 +844,6 @@
     "contrastButtons": "Buttons {r}:1",
     "pass": "AA",
     "fail": "below AA",
-    "fontSans": "Poppins · Tajawal",
-    "fontSerif": "Serif headings · Tajawal",
     "boldPrices": "Bold prices",
     "shareTitle": "Use on all {n} locations",
     "shareTitleOne": "Use on every location",
@@ -856,23 +854,23 @@
     "failed": "That didn’t work. Check your connection and try again.",
     "assistant": {
       "title": "Theme assistant",
-      "subtitle": "Designs colours and type for {name}",
+      "subtitle": "Designs the look of {name}’s menu",
       "startOver": "Start over",
-      "hello": "Hi {name}! Tell me how {place} should feel, or add a photo of your space or logo and I’ll start from that.",
-      "helloAnon": "Hi! Tell me how {place} should feel, or add a photo of your space or logo and I’ll start from that.",
+      "hello": "Hi {name}! Tell me how {place}’s menu should look and feel: colours, fonts, layout. Or add your logo or a photo of your space and I’ll start from that.",
+      "helloAnon": "Hi! Tell me how {place}’s menu should look and feel: colours, fonts, layout. Or add your logo or a photo of your space and I’ll start from that.",
       "chips": [
         "Make it darker",
-        "More contrast",
-        "Match my logo",
-        "Try a serif feel"
+        "Classic printed menu",
+        "Big dish photos",
+        "Friendly and playful"
       ],
-      "placeholder": "Describe a mood, a colour or a place…",
+      "placeholder": "Describe the look, or add your logo…",
       "inputLabel": "Message to the Theme assistant",
       "send": "Send",
       "attach": "Add a photo",
       "removePhoto": "Remove photo",
       "uploading": "Adding photo…",
-      "thinking": "Designing three directions…",
+      "thinking": "Designing three looks…",
       "picked": "Picked",
       "pick": "Preview",
       "allPass": "All text passes WCAG AA",
@@ -888,10 +886,41 @@
       "busy": "The assistant is busy right now. Try again in a moment.",
       "declined": "The assistant couldn’t design that. Try describing it another way.",
       "limit": "That’s a lot of designs for one hour. Try again a little later.",
-      "photoFailed": "That photo couldn’t be added. Use a JPG, PNG or WebP under 8 MB."
+      "photoFailed": "That photo couldn’t be added. Use a JPG, PNG or WebP under 8 MB.",
+      "newLogo": "Your new logo",
+      "newCover": "New header photo"
     },
     "saveApply": "Save & apply",
-    "deleteBody": "Places using it go back to Auto-match."
+    "deleteBody": "Places using it go back to Auto-match.",
+    "style": {
+      "font": {
+        "sans": "Modern · Poppins and Tajawal",
+        "serif": "Classic · Playfair and Amiri",
+        "rounded": "Friendly · Baloo Bhaijaan",
+        "geometric": "Geometric · Reem Kufi"
+      },
+      "corners": {
+        "soft": "Soft corners",
+        "round": "Round corners",
+        "sharp": "Sharp corners"
+      },
+      "header": {
+        "photo": "Photo header",
+        "color": "Colour header",
+        "plain": "No banner"
+      },
+      "layout": {
+        "list": "List",
+        "cards": "Photo cards",
+        "compact": "Compact text"
+      }
+    },
+    "pendingTitle": "Applies with this theme",
+    "pendingLogo": "New logo",
+    "pendingLogoBranches": "New logo · shows on all {n} branches",
+    "pendingCover": "New header photo",
+    "keepLogo": "Keep the current logo",
+    "keepCover": "Keep the current header photo"
   },
   "tour": {
     "overline": "Growth feature · {location}",

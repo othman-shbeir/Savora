@@ -6,3 +6,4 @@ export * from './plans';
 export * from './themes';
 export * from './workspace';
 export * from './tour';
+export * from './space';

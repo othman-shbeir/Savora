@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { fill, plansEnabled, rank, type Locale, type PlanId, type ThemeEntry, type ThemesOverview, type ThemeTag } from '@savora/shared';
+import { fill, plansEnabled, rank, type Locale, type Photo, type PlanId, type ThemeEntry, type ThemesOverview, type ThemeTag } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { send } from '@/lib/client-api';
 import { cx } from '@/lib/cx';
@@ -17,6 +17,8 @@ import { ThemeAssistant, type Draft } from './theme-assistant';
 import { Icon, ICON, MiniTheme, PhonePreview, TokenRow, type Look, type PreviewData } from './theme-preview';
 
 type Filter = 'all' | ThemeTag;
+type Assets = { logo: Photo | null; cover: Photo | null };
+const NO_ASSETS: Assets = { logo: null, cover: null };
 
 /** Menu themes: the gallery (plan-gated), the Theme assistant, and a live preview of the guest menu. */
 export function ThemesScreen({
@@ -50,6 +52,9 @@ export function ThemesScreen({
   const [selectedRef, setSelectedRef] = useState(all.some((e) => e.ref === data.selectedRef) ? data.selectedRef : data.current.ref);
   // An assistant option being previewed; saved as a custom theme when applied.
   const [draft, setDraft] = useState<Draft | null>(null);
+  // The owner's photos the assistant picked as the logo or header. They stay until applied (with
+  // whichever theme is chosen) or dropped, even when a later answer doesn't mention them.
+  const [assets, setAssets] = useState<Assets>(NO_ASSETS);
   const [everywhere, setEverywhere] = useState(false);
   const [lang, setLang] = useState<Locale>(locale);
   const [busy, setBusy] = useState(false);
@@ -60,7 +65,8 @@ export function ThemesScreen({
   const look: Look = draft ?? selected;
   const name = (x: { nameEn: string; nameAr: string | null }) => (locale === 'ar' && x.nameAr) || x.nameEn;
   const lockedCount = data.presets.filter((p) => !p.allowed).length;
-  const changed = Boolean(draft) || selectedRef !== data.selectedRef || everywhere;
+  const changed = Boolean(draft) || selectedRef !== data.selectedRef || everywhere || Boolean(assets.logo || assets.cover);
+  const withAssets = { ...preview, logoUrl: assets.logo?.url ?? preview.logoUrl, coverUrl: assets.cover?.url ?? preview.coverUrl };
   const billing = `/${locale}/app/billing`;
 
   function say(text: string, tone: 'ok' | 'error' = 'ok') {
@@ -72,17 +78,20 @@ export function ThemesScreen({
     setBusy(true);
     let ref = selectedRef;
     if (draft) {
-      const saved = await send<{ ref: string }>('POST', `/organizations/${orgId}/themes`, { nameEn: draft.nameEn, nameAr: draft.nameAr, colors: draft.colors, font: draft.font, boldPrices: draft.boldPrices });
+      const { nameEn, nameAr, colors, font, boldPrices, corners, header, layout } = draft;
+      const saved = await send<{ ref: string }>('POST', `/organizations/${orgId}/themes`, { nameEn, nameAr, colors, font, boldPrices, corners, header, layout });
       if (!saved.ok || !saved.data) {
         setBusy(false);
         return say(th.failed, 'error');
       }
       ref = saved.data.ref;
     }
-    const res = await fetch(`/api/locations/${locationId}/theme`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ref, everywhere }) }).catch(() => null);
+    const body = { ref, everywhere, ...(assets.logo ? { logoPhotoId: assets.logo.id } : {}), ...(assets.cover ? { coverPhotoId: assets.cover.id } : {}) };
+    const res = await fetch(`/api/locations/${locationId}/theme`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     setBusy(false);
     if (!res?.ok) return say(th.failed, 'error');
     setDraft(null);
+    setAssets(NO_ASSETS);
     setSelectedRef(ref);
     setEverywhere(false);
     say(th.applied);
@@ -266,7 +275,7 @@ export function ThemesScreen({
         />
       </div>
       <div className="mt-4">
-        <PhonePreview look={look} data={preview} lang={lang} />
+        <PhonePreview look={look} data={withAssets} lang={lang} />
       </div>
       <div className="my-4 h-px bg-line" />
       <div className="flex items-baseline justify-between gap-2">
@@ -276,6 +285,32 @@ export function ThemesScreen({
       <TokenRow look={look} t={th} />
     </Card>
   );
+
+  const assetsCard =
+    assets.logo || assets.cover ? (
+      <Card className="p-4">
+        <Overline>{th.pendingTitle}</Overline>
+        <ul className="mt-3 grid gap-2">
+          {(
+            [
+              ['logo', assets.logo, data.brandBranches > 1 ? fill(th.pendingLogoBranches, { n: data.brandBranches }) : th.pendingLogo, th.keepLogo],
+              ['cover', assets.cover, th.pendingCover, th.keepCover],
+            ] as const
+          ).map(([key, p, label, keep]) =>
+            p ? (
+              <li key={key} className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- a pre-sized WebP from the API */}
+                <img src={p.url} alt="" className="size-10 shrink-0 rounded-lg border border-line bg-white object-contain" />
+                <span className="min-w-0 flex-1 text-body-s font-semibold">{label}</span>
+                <button type="button" onClick={() => setAssets((x) => ({ ...x, [key]: null }))} aria-label={keep} title={keep} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink">
+                  <Icon d={ICON.x} size={14} />
+                </button>
+              </li>
+            ) : null,
+          )}
+        </ul>
+      </Card>
+    ) : null;
 
   // ---------- Apply ----------
   const locked = !draft && !selected.allowed;
@@ -369,7 +404,12 @@ export function ThemesScreen({
             placeName={(locale === 'ar' && preview.name.ar) || preview.name.en}
             canSave={canEdit}
             draft={draft}
-            onPreview={setDraft}
+            onPreview={(d) => {
+              setDraft(d);
+              // A new pick replaces the old one; an answer that picked nothing keeps what's there.
+              // Starting over (no draft) drops them.
+              setAssets((x) => (d ? { logo: d.logo ?? x.logo, cover: d.cover ?? x.cover } : NO_ASSETS));
+            }}
             onSaved={(ref) => {
               setDraft(null);
               setSelectedRef(ref);
@@ -380,6 +420,7 @@ export function ThemesScreen({
         )}
         <div className="grid gap-4">
           {previewCard}
+          {assetsCard}
           {shareCard}
         </div>
       </div>

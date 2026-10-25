@@ -90,7 +90,11 @@ database for uptime monitors) and `/api/public/scan` (passes the guest's address
 - **Components:** small primitives in [`src/components/ui`](src/components/ui) (Button, Card, Dialog,
   Field, Segmented, Switch, Badge, Logo); screens in folders by area.
 - **Guest menu themes** replace the colour tokens on the guest page only, through `themeVars()` from
-  `@savora/shared`; Auto-match keeps the default tokens and dark mode.
+  `@savora/shared`; Auto-match keeps the default tokens and dark mode. The rest of a theme's look is
+  set with data attributes on the menu frame (`data-menu-font`, `data-corners`) and the
+  `--r-*` radius variables in `globals.css`; header and dish layout are chosen in the page. Heading
+  fonts live in [`src/lib/menu-fonts.ts`](src/lib/menu-fonts.ts) and are never preloaded, so a menu
+  downloads only the one it uses.
 - **Landing page** is built from the Figma frame "Savora / Landing" in
   [`src/components/landing`](src/components/landing); its photos and icons are in
   `public/images/landing`.

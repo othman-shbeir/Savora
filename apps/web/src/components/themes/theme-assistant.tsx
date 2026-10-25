@@ -11,15 +11,17 @@ import { Icon, ICON, MiniTheme, type Look } from './theme-preview';
 
 type Text = Dictionary['themes'];
 
-/** An assistant option shown in the preview but not saved yet. */
-export type Draft = Look & { nameEn: string; nameAr: string | null };
+/** An assistant option shown in the preview but not saved yet, with any of the owner's photos the
+ *  assistant chose as the logo or the header photo. */
+export type Draft = Look & { nameEn: string; nameAr: string | null; logo: Photo | null; cover: Photo | null };
 
 type Turn = { role: 'user'; text: string; sent: string; photo: Photo | null } | { role: 'assistant'; text: string; options: AssistantOption[] };
 
 /** The longest conversation sent back each turn; older turns drop off the front. */
 const KEEP = 15;
 
-/** A chat that proposes three palettes per request. The conversation lives in the browser and goes
+/** A chat that designs three complete looks per request (colours, type, header, corners, layout) and
+ *  can use the owner's photos as the logo or header. The conversation lives in the browser and goes
  *  back to the API each turn; every option arrives already checked for contrast. */
 export function ThemeAssistant({
   t,
@@ -61,7 +63,8 @@ export function ThemeAssistant({
 
   function preview(turn: number, option: number, o: AssistantOption) {
     setPicked({ turn, option });
-    onPreview({ nameEn: o.nameEn, nameAr: o.nameAr || null, colors: o.colors, font: o.font, boldPrices: o.boldPrices });
+    const { nameEn, nameAr, colors, font, boldPrices, corners, header, layout, logo, cover } = o;
+    onPreview({ nameEn, nameAr: nameAr || null, colors, font, boldPrices, corners, header, layout, logo, cover });
   }
 
   async function ask(text: string) {
@@ -83,7 +86,11 @@ export function ThemeAssistant({
       turns: history.map((x) =>
         x.role === 'user'
           ? { role: 'user', text: x.sent, photoId: x.photo?.id ?? null }
-          : { role: 'assistant', text: x.text, options: x.options.map(({ nameEn, nameAr, noteEn, noteAr, colors, font, boldPrices }) => ({ nameEn, nameAr, noteEn, noteAr, colors, font, boldPrices })) },
+          : {
+              role: 'assistant',
+              text: x.text,
+              options: x.options.map(({ nameEn, nameAr, noteEn, noteAr, colors, font, boldPrices, corners, header, layout }) => ({ nameEn, nameAr, noteEn, noteAr, colors, font, boldPrices, corners, header, layout })),
+            },
       ),
     });
     setThinking(false);
@@ -110,7 +117,8 @@ export function ThemeAssistant({
 
   async function save(o: AssistantOption) {
     setSaving(true);
-    const res = await send<{ ref: string }>('POST', `/organizations/${orgId}/themes`, { nameEn: o.nameEn, nameAr: o.nameAr || null, colors: o.colors, font: o.font, boldPrices: o.boldPrices });
+    const { nameEn, nameAr, colors, font, boldPrices, corners, header, layout } = o;
+    const res = await send<{ ref: string }>('POST', `/organizations/${orgId}/themes`, { nameEn, nameAr: nameAr || null, colors, font, boldPrices, corners, header, layout });
     setSaving(false);
     if (!res.ok || !res.data) return setError(t.failed);
     onSaved(res.data.ref);
@@ -172,6 +180,23 @@ export function ThemeAssistant({
             bot(
               <>
                 <p className="text-body-s">{turn.text}</p>
+                {(turn.options[0]?.logo || turn.options[0]?.cover) && (
+                  <ul className="mt-2.5 flex flex-wrap gap-2">
+                    {(
+                      [
+                        [turn.options[0].logo, a.newLogo],
+                        [turn.options[0].cover, a.newCover],
+                      ] as const
+                    ).map(([p, label]) =>
+                      p ? (
+                        <li key={label} className="inline-flex items-center gap-2 rounded-[10px] border border-line bg-surface p-1 pe-2.5 text-caption font-semibold">
+                          <img src={p.url} alt="" className="size-8 rounded-md bg-white object-contain" />
+                          {label}
+                        </li>
+                      ) : null,
+                    )}
+                  </ul>
+                )}
                 <ul className="mt-3 grid gap-2.5 sm:grid-cols-3">
                   {turn.options.map((o, oi) => {
                     const on = Boolean(draft) && picked?.turn === ti && picked.option === oi;
@@ -190,6 +215,9 @@ export function ThemeAssistant({
                             {on ? <span className="shrink-0 rounded-full bg-brand-fill px-2 py-0.5 text-[10px] font-semibold text-white">{a.picked}</span> : <span className="shrink-0 text-[11px] text-muted">{a.pick}</span>}
                           </span>
                           {note && <span className="mx-1 mt-0.5 line-clamp-2 block text-[11px] text-muted">{note}</span>}
+                          <span className="mx-1 mt-1 block truncate text-[10px] font-semibold text-ink-2">
+                            {t.style.layout[o.layout]} · {t.style.header[o.header]}
+                          </span>
                           {o.adjusted && <span className="mx-1 mt-1 block text-[10px] font-semibold text-gold-ink">{a.adjusted}</span>}
                         </button>
                       </li>

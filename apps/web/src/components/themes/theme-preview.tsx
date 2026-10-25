@@ -1,20 +1,22 @@
-import { AA, checkTheme, fill, formatPrice, onPrimary, type Locale, type ThemeColors, type ThemeFont } from '@savora/shared';
+import { AA, checkTheme, fill, formatPrice, onPrimary, type Locale, type ThemeColors, type ThemeStyle } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { cx } from '@/lib/cx';
+import { menuFontVars } from '@/lib/menu-fonts';
 
 type Text = Dictionary['themes'];
 
-/** The parts of a theme the previews draw. */
-export type Look = { colors: ThemeColors; font: ThemeFont; boldPrices: boolean };
+/** The parts of a theme the previews draw: colours and the rest of the look. */
+export type Look = ThemeStyle & { colors: ThemeColors };
 
 /** What the phone shows: the place's own name and first dishes, or a sample when the menu is empty. */
 export type PreviewData = {
   name: { en: string; ar: string | null };
   tagline: { en: string | null; ar: string | null };
   logoUrl: string | null;
+  coverUrl: string | null;
   currency: string;
   section: { en: string | null; ar: string | null };
-  items: Array<{ nameEn: string | null; nameAr: string | null; descriptionEn: string | null; descriptionAr: string | null; priceMinor: number }>;
+  items: Array<{ nameEn: string | null; nameAr: string | null; descriptionEn: string | null; descriptionAr: string | null; priceMinor: number; thumbUrl: string | null }>;
 };
 
 /** Guest-menu words in both languages: the preview language is chosen separately from the app's. */
@@ -22,7 +24,6 @@ const GUEST = {
   en: { contact: 'Contact', directions: 'Directions', order: 'Order', special: 'Today’s special' },
   ar: { contact: 'اتصال', directions: 'الاتجاهات', order: 'اطلب', special: 'طبق اليوم' },
 };
-const SERIF = 'ui-serif, Georgia, "Times New Roman", var(--font-tajawal), serif';
 
 export const ICON = {
   check: <polyline points="20 6 9 17 4 12" />,
@@ -125,39 +126,60 @@ export function PhonePreview({ look, data, lang }: { look: Look; data: PreviewDa
   const pick = (en: string | null, ar: string | null) => (lang === 'ar' ? (ar ?? en) : (en ?? ar)) ?? '';
   const name = pick(data.name.en, data.name.ar);
   const tagline = pick(data.tagline.en, data.tagline.ar);
-  const heading = look.font === 'serif' ? { fontFamily: SERIF } : undefined;
   const other = lang === 'ar' ? data.section.en : data.section.ar;
+  const rule = `color-mix(in srgb, ${c.muted} 25%, transparent)`;
+  const priceClass = cx('shrink-0 font-mono', look.boldPrices ? 'text-body-s font-bold' : 'text-caption font-semibold');
+  // The same top as the guest menu: the cover photo (or its gradient), a primary band, or none.
+  const banner =
+    look.header === 'color'
+      ? { background: `radial-gradient(circle at 85% 0%, color-mix(in srgb, ${c.accent} 45%, transparent), transparent 60%), ${c.primary}` }
+      : data.coverUrl
+        ? { background: `center / cover no-repeat url("${data.coverUrl}")` }
+        : { background: `radial-gradient(circle at 80% 10%, color-mix(in srgb, ${c.primary} 55%, transparent), transparent 55%), #1f1f1f` };
   return (
     <div className="mx-auto w-[272px] max-w-full rounded-[40px] bg-[#1a1a1a] p-2 shadow-[0_24px_48px_rgb(28_28_28/0.22)]">
-      <div lang={lang} dir={lang === 'ar' ? 'rtl' : 'ltr'} className="relative overflow-hidden rounded-[32px] px-4 pt-11 pb-[18px]" style={{ background: c.bg }}>
-        <span aria-hidden className="absolute start-1/2 top-2.5 h-[22px] w-[78px] -translate-x-1/2 rounded-full bg-[#1a1a1a] rtl:translate-x-1/2" />
-        <div className="rounded-[18px] px-3.5 py-4 text-center" style={{ background: c.surface }}>
-          <span className="relative mx-auto grid size-11 place-items-center overflow-hidden rounded-full text-title-m font-bold" style={{ background: c.primary, color: onPrimary(c) }}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- a pre-sized WebP from the API */}
-            {data.logoUrl ? <img src={data.logoUrl} alt="" className="absolute inset-0 size-full bg-white object-contain p-0.5" /> : name.slice(0, 1)}
-          </span>
-          <p className="mt-2 text-heading-s leading-tight font-semibold" style={{ color: c.ink, ...heading }}>
-            {name}
-          </p>
-          {tagline && (
-            <p className="text-caption" style={{ color: c.muted }}>
-              {tagline}
+      <div
+        lang={lang}
+        dir={lang === 'ar' ? 'rtl' : 'ltr'}
+        data-menu-font={look.font !== 'sans' ? look.font : undefined}
+        data-corners={look.corners}
+        className={cx('menu-look relative overflow-hidden rounded-[32px] px-4 pt-11 pb-[18px]', menuFontVars)}
+        style={{ background: c.bg }}
+      >
+        <span aria-hidden className="absolute start-1/2 top-2.5 z-10 h-[22px] w-[78px] -translate-x-1/2 rounded-full bg-[#1a1a1a] rtl:translate-x-1/2" />
+        <div className="overflow-hidden rounded-[var(--r-tile)] text-center" style={{ background: c.surface }}>
+          {look.header !== 'plain' && <div aria-hidden className="h-16" style={banner} />}
+          <div className={cx('px-3.5 pb-4', look.header === 'plain' && 'pt-4')}>
+            <span
+              className={cx('relative mx-auto grid size-11 place-items-center overflow-hidden rounded-[var(--r-thumb)] text-title-m font-bold', look.header !== 'plain' && '-mt-[22px]')}
+              style={{ background: c.primary, color: onPrimary(c), boxShadow: look.header !== 'plain' ? `0 0 0 3px ${c.surface}` : undefined }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- a pre-sized WebP from the API */}
+              {data.logoUrl ? <img src={data.logoUrl} alt="" className="absolute inset-0 size-full bg-white object-contain p-0.5" /> : name.slice(0, 1)}
+            </span>
+            <p className="menu-heading mt-2 text-heading-s leading-tight font-semibold" style={{ color: c.ink }}>
+              {name}
             </p>
-          )}
-          <div className="mt-2.5 flex justify-center gap-1.5">
-            {[g.contact, g.directions, g.order].map((l, i) => (
-              <span
-                key={l}
-                className="rounded-full px-2.5 py-1 text-[10px] leading-none font-semibold"
-                style={i === 1 ? { background: c.primary, color: onPrimary(c) } : { border: `1px solid color-mix(in srgb, ${c.muted} 35%, transparent)`, color: c.ink }}
-              >
-                {l}
-              </span>
-            ))}
+            {tagline && (
+              <p className="text-caption" style={{ color: c.muted }}>
+                {tagline}
+              </p>
+            )}
+            <div className="mt-2.5 flex justify-center gap-1.5">
+              {[g.contact, g.directions, g.order].map((l, i) => (
+                <span
+                  key={l}
+                  className="rounded-[var(--r-thumb)] px-2.5 py-1 text-[10px] leading-none font-semibold"
+                  style={i === 1 ? { background: c.primary, color: onPrimary(c) } : { border: `1px solid color-mix(in srgb, ${c.muted} 35%, transparent)`, color: c.ink }}
+                >
+                  {l}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="mt-3.5 rounded-[18px] px-3.5 pt-1 pb-1.5" style={{ background: c.surface }}>
-          <div className="flex items-baseline justify-between gap-2 pt-2.5 pb-1.5" style={{ borderBottom: `1px solid color-mix(in srgb, ${c.muted} 25%, transparent)` }}>
+        <div className="mt-3.5 rounded-[var(--r-tile)] px-3.5 pt-1 pb-1.5" style={{ background: c.surface }}>
+          <div className="flex items-baseline justify-between gap-2 pt-2.5 pb-1.5" style={{ borderBottom: `1px solid ${rule}` }}>
             <span className="text-overline font-semibold tracking-[0.1em] uppercase" style={{ color: c.primary }}>
               {pick(data.section.en, data.section.ar)}
             </span>
@@ -169,21 +191,68 @@ export function PhonePreview({ look, data, lang }: { look: Look; data: PreviewDa
           </div>
           {data.items.map((it, i) => {
             const desc = pick(it.descriptionEn, it.descriptionAr);
+            const dish = pick(it.nameEn, it.nameAr);
+            const price = formatPrice(it.priceMinor, data.currency);
+            const divider = i < data.items.length - 1 ? { borderBottom: `1px dashed ${rule}` } : undefined;
+            if (look.layout === 'compact')
+              return (
+                <div key={i} className="py-2.5" style={divider}>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="menu-heading truncate text-body-s font-semibold" style={{ color: c.ink }}>
+                      {dish}
+                    </span>
+                    <span aria-hidden className="min-w-3 flex-1 -translate-y-1" style={{ borderBottom: `2px dotted color-mix(in srgb, ${c.muted} 45%, transparent)` }} />
+                    <span dir="ltr" className={priceClass} style={{ color: c.primary }}>
+                      {price}
+                    </span>
+                  </div>
+                  {desc && (
+                    <span className="block truncate text-[11px]" style={{ color: c.muted }}>
+                      {desc}
+                    </span>
+                  )}
+                </div>
+              );
+            if (look.layout === 'cards' && it.thumbUrl)
+              return (
+                <div key={i} className="py-2.5" style={divider}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a pre-sized WebP from the API */}
+                  <img src={it.thumbUrl} alt="" className="h-[92px] w-full rounded-[var(--r-thumb)] object-cover" />
+                  <span className="mt-1.5 flex items-baseline justify-between gap-2">
+                    <span className="menu-heading truncate text-body-s font-semibold" style={{ color: c.ink }}>
+                      {dish}
+                    </span>
+                    <span dir="ltr" className={priceClass} style={{ color: c.primary }}>
+                      {price}
+                    </span>
+                  </span>
+                </div>
+              );
             return (
-              <div key={i} className="flex justify-between gap-2.5 py-2.5" style={i < data.items.length - 1 ? { borderBottom: `1px dashed color-mix(in srgb, ${c.muted} 25%, transparent)` } : undefined}>
+              <div key={i} className="flex items-center justify-between gap-2.5 py-2.5" style={divider}>
                 <span className="min-w-0">
-                  <span className="block truncate text-body-s font-semibold" style={{ color: c.ink, ...heading }}>
-                    {pick(it.nameEn, it.nameAr)}
+                  <span className="menu-heading block truncate text-body-s font-semibold" style={{ color: c.ink }}>
+                    {dish}
                   </span>
                   {desc && (
                     <span className="block truncate text-[11px]" style={{ color: c.muted }}>
                       {desc}
                     </span>
                   )}
+                  {it.thumbUrl && (
+                    <span dir="ltr" className={cx(priceClass, 'mt-0.5 block')} style={{ color: c.primary }}>
+                      {price}
+                    </span>
+                  )}
                 </span>
-                <span dir="ltr" className={cx('shrink-0 font-mono', look.boldPrices ? 'text-body-s font-bold' : 'text-caption font-semibold')} style={{ color: c.primary }}>
-                  {formatPrice(it.priceMinor, data.currency)}
-                </span>
+                {it.thumbUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- a pre-sized WebP from the API
+                  <img src={it.thumbUrl} alt="" className="size-11 shrink-0 rounded-[var(--r-thumb)] object-cover" />
+                ) : (
+                  <span dir="ltr" className={priceClass} style={{ color: c.primary }}>
+                    {price}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -245,10 +314,15 @@ export function TokenRow({ look, t }: { look: Look; t: Text }) {
       <p className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1.5">
           <Icon d={ICON.type} size={12} />
-          {look.font === 'serif' ? t.fontSerif : t.fontSans}
+          {t.style.font[look.font]}
         </span>
-        {look.boldPrices && <span>{t.boldPrices}</span>}
+        <span>{styleLine(look, t)}</span>
       </p>
     </>
   );
+}
+
+/** "Photo header · List · Soft corners · Bold prices", in the app's language. */
+export function styleLine(look: Look, t: Text) {
+  return [t.style.header[look.header], t.style.layout[look.layout], t.style.corners[look.corners], look.boldPrices ? t.boldPrices : null].filter(Boolean).join(' · ');
 }

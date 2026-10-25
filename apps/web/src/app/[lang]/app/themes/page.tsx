@@ -14,9 +14,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /** Shown in the preview while the menu is still empty. */
 const SAMPLE: PreviewData['items'] = [
-  { nameEn: 'Cardamom Latte', nameAr: 'لاتيه بالهيل', descriptionEn: 'Espresso, cardamom, orange', descriptionAr: 'إسبريسو، هيل، برتقال', priceMinor: 1800 },
-  { nameEn: 'Spanish Latte', nameAr: 'سبانش لاتيه', descriptionEn: 'Cold brew, condensed milk', descriptionAr: 'قهوة باردة، حليب مكثّف', priceMinor: 2200 },
-  { nameEn: 'Labneh Toast', nameAr: 'توست باللبنة', descriptionEn: 'Labneh, za’atar, olive oil', descriptionAr: 'لبنة، زعتر، زيت زيتون', priceMinor: 2500 },
+  { nameEn: 'Cardamom Latte', nameAr: 'لاتيه بالهيل', descriptionEn: 'Espresso, cardamom, orange', descriptionAr: 'إسبريسو، هيل، برتقال', priceMinor: 1800, thumbUrl: null },
+  { nameEn: 'Spanish Latte', nameAr: 'سبانش لاتيه', descriptionEn: 'Cold brew, condensed milk', descriptionAr: 'قهوة باردة، حليب مكثّف', priceMinor: 2200, thumbUrl: null },
+  { nameEn: 'Labneh Toast', nameAr: 'توست باللبنة', descriptionEn: 'Labneh, za’atar, olive oil', descriptionAr: 'لبنة، زعتر، زيت زيتون', priceMinor: 2500, thumbUrl: null },
 ];
 
 /** Menu themes for the location chosen in the sidebar. */
@@ -33,10 +33,14 @@ export default async function ThemesPage() {
     ? {
         name: { en: data.brand.nameEn, ar: data.brand.nameAr },
         tagline: { en: data.brand.taglineEn, ar: data.brand.taglineAr },
-        logoUrl: data.brand.logo?.thumbUrl ?? null,
+        // Logos use the full image: the thumbnail is a square crop that would cut off a wide logo.
+        logoUrl: data.brand.logo?.url ?? null,
+        coverUrl: data.cover?.url ?? null,
         currency: menu!.location.currency,
         section: section ? { en: section.nameEn, ar: section.nameAr } : { en: 'House favorites', ar: 'المفضلة لدينا' },
-        items: section ? section.items.slice(0, 3) : SAMPLE,
+        items: section
+          ? section.items.slice(0, 3).map(({ nameEn, nameAr, descriptionEn, descriptionAr, priceMinor, photo }) => ({ nameEn, nameAr, descriptionEn, descriptionAr, priceMinor, thumbUrl: photo?.thumbUrl ?? null }))
+          : SAMPLE,
       }
     : null;
 

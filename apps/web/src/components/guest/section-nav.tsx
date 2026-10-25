@@ -47,7 +47,7 @@ export function SectionNav({ sections, label }: { sections: Array<{ id: string; 
               href={`#${s.id}`}
               aria-current={active === s.id ? 'true' : undefined}
               className={cx(
-                'inline-flex h-9 items-center rounded-full border px-4 text-body-s font-semibold whitespace-nowrap transition-colors',
+                'inline-flex h-9 items-center rounded-[var(--r-pill,9999px)] border px-4 text-body-s font-semibold whitespace-nowrap transition-colors',
                 active === s.id ? 'border-brand bg-brand-fill text-[var(--on-brand,#fff)]' : 'border-line-2 bg-surface text-ink-2 hover:border-ink',
               )}
             >

@@ -191,14 +191,46 @@ body {
 }
 
 /* ---------- Guest menu themes ---------- */
-/* Latin headings take a serif; Arabic has none here, so it falls through to Tajawal. */
-[data-menu-font="serif"] :is(h1, h2, h3) {
-  font-family: ui-serif, Georgia, "Times New Roman", var(--font-tajawal), serif;
+/* The guest menu and the Menu themes preview share these. Fonts come from lib/menu-fonts.ts and
+   apply to headings and dish names; each family covers Latin and Arabic (Playfair has no Arabic,
+   so Arabic serif headings fall through to Amiri). */
+[data-menu-font] :is(h1, h2, h3, .menu-heading) {
   letter-spacing: 0;
+}
+[data-menu-font="serif"] :is(h1, h2, h3, .menu-heading) {
+  font-family: var(--font-playfair), var(--font-amiri), ui-serif, Georgia, serif;
+}
+[data-menu-font="rounded"] :is(h1, h2, h3, .menu-heading) {
+  font-family: var(--font-baloo), var(--font-tajawal), sans-serif;
+}
+[data-menu-font="geometric"] :is(h1, h2, h3, .menu-heading) {
+  font-family: var(--font-reem-kufi), var(--font-tajawal), sans-serif;
 }
 [data-bold-prices] .menu-price {
   font-weight: 700;
   font-size: 14px;
+}
+/* Corner radii: the main card, tiles (buttons, large photos, the logo), thumbnails, price chips,
+   and pills (section chips; only Sharp squares them off). */
+.menu-look {
+  --r-card: 28px;
+  --r-tile: 16px;
+  --r-thumb: 12px;
+  --r-chip: 6px;
+  --r-pill: 9999px;
+}
+.menu-look[data-corners="round"] {
+  --r-card: 36px;
+  --r-tile: 24px;
+  --r-thumb: 18px;
+  --r-chip: 999px;
+}
+.menu-look[data-corners="sharp"] {
+  --r-card: 6px;
+  --r-tile: 4px;
+  --r-thumb: 3px;
+  --r-chip: 2px;
+  --r-pill: 4px;
 }
 
 :focus-visible {

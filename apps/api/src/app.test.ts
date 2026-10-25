@@ -1,11 +1,15 @@
 import { createDb, schema, type Db } from '@savora/db';
+import { DEFAULT_POSE } from '@savora/shared';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import { Readable } from 'node:stream';
 import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from './app';
 import { loadEnv } from './env';
 import { AiRefused, type AiProvider } from './lib/ai';
+import { demoSpaceBuilder, type ModelStore, type SpaceBuilder } from './lib/space';
+import { demoRoomPly } from './lib/space-demo';
 import type { MediaStore } from './lib/media';
 import { smtpMailer, type Mail } from './mailer';
 import { purgeScanEvents } from './routes/scans';
@@ -772,7 +776,7 @@ describe('plans and billing', () => {
 
 describe('menu themes and AI', () => {
   // A stand-in for Claude: records what it was given and answers with fixed data.
-  const seen: { readMenu: Array<{ types: string[]; currency: string }>; design: Array<{ locale: string; turns: number; photo: boolean }> } = { readMenu: [], design: [] };
+  const seen: { readMenu: Array<{ types: string[]; currency: string }>; design: Array<{ locale: string; turns: number; photo: boolean; hasLogo: boolean }> } = { readMenu: [], design: [] };
   let refuse = false;
   const fakeAi: AiProvider = {
     async readMenu({ files, currency }) {
@@ -795,14 +799,19 @@ describe('menu themes and AI', () => {
         notes: ['Prices under the fold were blurry'],
       };
     },
-    async designThemes({ locale, turns }) {
-      seen.design.push({ locale, turns: turns.length, photo: turns.some((t) => t.role === 'user' && Boolean(t.photo)) });
+    async designThemes({ locale, turns, brand }) {
+      seen.design.push({ locale, turns: turns.length, photo: turns.some((t) => t.role === 'user' && Boolean(t.photo)), hasLogo: brand.hasLogo });
+      // Like the real model: "logo" and "cover" in the last message point at a photo by number.
+      const last = turns.at(-1)!.text;
+      const plain = { corners: 'soft', header: 'photo', layout: 'list' } as const;
       return {
         reply: 'Three directions.',
+        logoPhoto: /logo/.test(last) ? 1 : null,
+        coverPhoto: /cover/.test(last) ? 2 : /missing/.test(last) ? 9 : null,
         options: [
-          { nameEn: 'Pale dawn', nameAr: 'فجر باهت', note: 'Soft and light', colors: { bg: '#F3EADB', surface: '#FBF6EE', primary: '#E89A8F', accent: '#C08A35', ink: '#9A8F86', muted: '#C9BFB5' }, font: 'serif', boldPrices: true },
-          { nameEn: 'Readable', nameAr: 'واضح', note: 'Already fine', colors: { bg: '#F5F5F5', surface: '#FFFFFF', primary: '#B4500B', accent: '#2E7D5B', ink: '#242424', muted: '#6E6E6E' }, font: 'sans', boldPrices: false },
-          { nameEn: 'Broken', nameAr: 'مكسور', note: 'Not a colour', colors: { bg: 'red', surface: '#FFFFFF', primary: '#000000', accent: '#000000', ink: '#000000', muted: '#000000' }, font: 'sans', boldPrices: false },
+          { nameEn: 'Pale dawn', nameAr: 'فجر باهت', note: 'Soft and light', colors: { bg: '#F3EADB', surface: '#FBF6EE', primary: '#E89A8F', accent: '#C08A35', ink: '#9A8F86', muted: '#C9BFB5' }, font: 'rounded', boldPrices: true, corners: 'round', header: 'plain', layout: 'compact' },
+          { nameEn: 'Readable', nameAr: 'واضح', note: 'Already fine', colors: { bg: '#F5F5F5', surface: '#FFFFFF', primary: '#B4500B', accent: '#2E7D5B', ink: '#242424', muted: '#6E6E6E' }, font: 'sans', boldPrices: false, ...plain },
+          { nameEn: 'Broken', nameAr: 'مكسور', note: 'Not a colour', colors: { bg: 'red', surface: '#FFFFFF', primary: '#000000', accent: '#000000', ink: '#000000', muted: '#000000' }, font: 'sans', boldPrices: false, ...plain },
         ],
       };
     },
@@ -905,24 +914,33 @@ describe('menu themes and AI', () => {
     const photoId = media.json().id;
     const res = await call(o, 'POST', `/organizations/${o.orgId}/themes/assistant`, { locationId: o.locationId, locale: 'ar', turns: [{ role: 'user', text: 'أدفأ', photoId }] });
     expect(res.statusCode).toBe(200);
-    expect(seen.design.at(-1)).toEqual({ locale: 'ar', turns: 1, photo: true });
+    expect(seen.design.at(-1)).toEqual({ locale: 'ar', turns: 1, photo: true, hasLogo: false });
     const { options } = res.json();
     // The malformed palette is dropped; the pale one is fixed and says so.
     expect(options.map((x: { nameEn: string }) => x.nameEn)).toEqual(['Pale dawn', 'Readable']);
     expect(options.every((x: { contrast: { ok: boolean } }) => x.contrast.ok)).toBe(true);
     expect(options.map((x: { adjusted: boolean }) => x.adjusted)).toEqual([true, false]);
-    expect(options[0]).toMatchObject({ noteAr: 'Soft and light', noteEn: '', font: 'serif', boldPrices: true });
+    // The whole look comes through, not only the colours. No photo was asked for as a logo.
+    expect(options[0]).toMatchObject({ noteAr: 'Soft and light', noteEn: '', font: 'rounded', boldPrices: true, corners: 'round', header: 'plain', layout: 'compact', logo: null, cover: null });
 
-    // Saving runs the same check, whatever the client sends.
-    const saved = await call(o, 'POST', `/organizations/${o.orgId}/themes`, { nameEn: 'Pale dawn', colors: { bg: '#F3EADB', surface: '#FBF6EE', primary: '#E89A8F', accent: '#C08A35', ink: '#9A8F86', muted: '#C9BFB5' }, font: 'serif' });
+    // Saving runs the same check, whatever the client sends, and keeps the style.
+    const saved = await call(o, 'POST', `/organizations/${o.orgId}/themes`, {
+      nameEn: 'Pale dawn',
+      colors: { bg: '#F3EADB', surface: '#FBF6EE', primary: '#E89A8F', accent: '#C08A35', ink: '#9A8F86', muted: '#C9BFB5' },
+      font: 'geometric',
+      corners: 'sharp',
+      header: 'color',
+      layout: 'cards',
+    });
     expect(saved.statusCode).toBe(201);
     const ref: string = saved.json().ref;
     expect(ref).toMatch(/^custom:/);
+    expect((await call(o, 'POST', `/organizations/${o.orgId}/themes`, { nameEn: 'X', colors: options[1].colors, layout: 'grid' })).statusCode).toBe(400);
     expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref })).json()).toEqual({ ok: true, ref });
     const list = (await call(o, 'GET', `/locations/${o.locationId}/themes`)).json();
     expect(list.custom).toHaveLength(1);
     expect(list.custom[0].contrast.ok).toBe(true);
-    expect(list.current).toMatchObject({ ref, tier: 'custom', font: 'serif' });
+    expect(list.current).toMatchObject({ ref, tier: 'custom', font: 'geometric', corners: 'sharp', header: 'color', layout: 'cards', boldPrices: false });
 
     // Another organization can neither use nor delete it.
     const other = await ownerWithLocation('themes-other@cafe.test');
@@ -932,6 +950,49 @@ describe('menu themes and AI', () => {
     // Deleting it puts its locations back on Auto-match.
     expect((await call(o, 'DELETE', `/organizations/${o.orgId}/themes/${ref.slice(7)}`)).json()).toEqual({ ok: true });
     expect((await call(o, 'GET', `/locations/${o.locationId}/themes`)).json().selectedRef).toBe('auto');
+  });
+
+  it('uses the owner’s photos as the logo and cover when they ask, applied with the theme', async () => {
+    const o = await ownerWithLocation('themes-logo@cafe.test');
+    await setPlan(o.orgId, 'growth');
+    const upload = async () => {
+      const f = files([{ name: 'p.png', type: 'image/png', data: await png() }]);
+      return (await aiApp.inject({ method: 'POST', url: `/organizations/${o.orgId}/media`, headers: { cookie: o.cookie, ...f.headers }, payload: f.payload })).json().id as string;
+    };
+    const [logoId, roomId] = [await upload(), await upload()];
+    const ask = (turns: object[]) => call(o, 'POST', `/organizations/${o.orgId}/themes/assistant`, { locationId: o.locationId, locale: 'en', turns });
+    const first = { role: 'user', text: 'use this as my logo', photoId: logoId };
+
+    // "Photo 1" is the logo; it comes back on every option, as a photo the client can show.
+    const one = (await ask([first])).json();
+    expect(one.options.every((x: { logo: { id: string } | null }) => x.logo?.id === logoId)).toBe(true);
+    expect(one.options[0].cover).toBeNull();
+
+    // Later, "Photo 2" as the cover: every option switches to the photo header.
+    const prior = { role: 'assistant', text: one.reply, options: one.options.map(({ nameEn, nameAr, noteEn, noteAr, colors, font, boldPrices, corners, header, layout }: Record<string, unknown>) => ({ nameEn, nameAr, noteEn, noteAr, colors, font, boldPrices, corners, header, layout })) };
+    const two = (await ask([first, prior, { role: 'user', text: 'and this room as the cover', photoId: roomId }])).json();
+    expect(two.options.map((x: { cover: { id: string } | null }) => x.cover?.id)).toEqual([roomId, roomId]);
+    expect(two.options.map((x: { header: string }) => x.header)).toEqual(['photo', 'photo']);
+    // A number that points at no photo is ignored.
+    expect((await ask([first, prior, { role: 'user', text: 'missing one' }])).json().options[0].cover).toBeNull();
+
+    // Applying sets the brand's logo and this location's cover with the theme.
+    const ref = (await call(o, 'POST', `/organizations/${o.orgId}/themes`, { nameEn: 'Mine', colors: two.options[1].colors })).json().ref;
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref, logoPhotoId: logoId, coverPhotoId: roomId })).json()).toEqual({ ok: true, ref });
+    const list = (await call(o, 'GET', `/locations/${o.locationId}/themes`)).json();
+    expect(list.brand.logo.id).toBe(logoId);
+    expect(list.cover.id).toBe(roomId);
+    expect(list.brandBranches).toBe(1);
+    expect(seen.design.length).toBeGreaterThan(0);
+    expect((await ask([{ role: 'user', text: 'warmer' }])).statusCode).toBe(200);
+    expect(seen.design.at(-1)!.hasLogo).toBe(true);
+
+    // Another organization's photo can't become this logo.
+    const other = await ownerWithLocation('themes-logo-other@cafe.test');
+    const f = files([{ name: 'p.png', type: 'image/png', data: await png() }]);
+    const foreign = (await aiApp.inject({ method: 'POST', url: `/organizations/${other.orgId}/media`, headers: { cookie: other.cookie, ...f.headers }, payload: f.payload })).json().id;
+    expect((await call(o, 'PUT', `/locations/${o.locationId}/theme`, { ref, logoPhotoId: foreign })).json()).toEqual({ error: 'invalid', issues: ['photo'] });
+    expect((await call(o, 'GET', `/locations/${o.locationId}/themes`)).json().brand.logo.id).toBe(logoId);
   });
 
   it('shares one theme across locations on Multi-location only', async () => {
@@ -1111,6 +1172,154 @@ describe('virtual trial', { timeout: 30_000 }, () => {
     expect((await o.call('DELETE', `/locations/${o.locationId}/tour/publish`)).json().published).toBeNull();
     expect((await guestTour()).statusCode).toBe(404);
     expect((await guestMenu()).json().tour).toBeNull();
+  });
+});
+
+describe('3D walk-through', { timeout: 60_000 }, () => {
+  // The stand-in service on a clock the test moves; models kept in memory.
+  let now = 1_000_000;
+  const builder = demoSpaceBuilder({ delayMs: 60_000, clock: () => now });
+  const modelFiles = new Map<string, Buffer>();
+  const models: ModelStore = {
+    put: async (key, data) => void modelFiles.set(key, Buffer.from(data)),
+    open: async (key) => (modelFiles.has(key) ? { stream: Readable.from([modelFiles.get(key)!]), bytes: modelFiles.get(key)!.length } : null),
+    remove: async (key) => void modelFiles.delete(key),
+  };
+  let spaceApp: FastifyInstance;
+  beforeAll(async () => {
+    spaceApp = await buildApp(env, db, { mailer: { send: async (m) => void outbox.push(m) }, store, builder, models });
+  });
+  afterAll(() => spaceApp.close());
+
+  type Owner = Awaited<ReturnType<typeof ownerWithLocation>>;
+  const call = (o: Owner, method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) => spaceApp.inject({ method, url, headers: { cookie: o.cookie }, ...(payload ? { payload } : {}) });
+  /** An MP4 as far as the API can tell: an "ftyp" box up front. */
+  const video = () => multipart('walk.mp4', 'video/mp4', Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypisom'), Buffer.alloc(2048, 7)]));
+  const sendVideo = (o: Owner, body = video()) => spaceApp.inject({ method: 'POST', url: `/locations/${o.locationId}/tour/space`, headers: { cookie: o.cookie, ...body.headers }, payload: body.payload });
+  /** Lets the next check happen now instead of waiting for the ten-second spacing. */
+  const due = (o: Owner) => db.update(schema.tourSpaces).set({ checkedAt: null }).where(eq(schema.tourSpaces.locationId, o.locationId));
+
+  /** A Growth café with a live menu of one dish. */
+  async function cafe(email: string) {
+    const o = await ownerWithLocation(email);
+    await setPlan(o.orgId, 'growth');
+    const cat = (await o.call('POST', `/locations/${o.locationId}/categories`, { nameEn: 'Coffee', nameAr: 'قهوة' })).json().id;
+    const dish = (await o.call('POST', `/locations/${o.locationId}/items`, { categoryId: cat, nameEn: 'Cardamom Latte', nameAr: 'لاتيه بالهيل', priceMinor: 1800 })).json();
+    await o.call('POST', `/locations/${o.locationId}/publish`, {});
+    return { ...o, dishId: dish.id as string, slug: (await o.menu()).location.slug as string };
+  }
+
+  it('says so when no scanning service is set up, and keeps it to Growth', async () => {
+    const o = await cafe('space-off@cafe.test');
+    const body = video();
+    const res = await app.inject({ method: 'POST', url: `/locations/${o.locationId}/tour/space`, headers: { cookie: o.cookie, ...body.headers }, payload: body.payload });
+    expect(res.json()).toEqual({ error: 'space_unavailable' });
+    expect((await o.call('GET', `/locations/${o.locationId}/tour`)).json().space).toMatchObject({ available: false, status: null, model: null });
+    await setPlan(o.orgId, 'starter');
+    expect((await sendVideo(o)).json()).toMatchObject({ error: 'upgrade_required', feature: 'virtualTrial' });
+  });
+
+  it('builds a model from a video, compresses it, and serves it', async () => {
+    const o = await cafe('space-build@cafe.test');
+    expect((await sendVideo(o, multipart('notes.txt', 'text/plain', Buffer.from('not a video at all')))).json()).toEqual({ error: 'not_a_video' });
+    const started = await sendVideo(o);
+    expect(started.statusCode).toBe(201);
+    expect(started.json()).toMatchObject({ available: true, status: 'queued', model: null });
+    // One build at a time per place.
+    expect((await sendVideo(o)).json()).toEqual({ error: 'space_building' });
+
+    // Still building: asking moves it along but there's nothing to show yet.
+    expect((await call(o, 'GET', `/locations/${o.locationId}/tour/space`)).json()).toMatchObject({ status: 'processing', model: null });
+    now += 61_000;
+    // Within ten seconds of the last check the service isn't asked again.
+    expect((await call(o, 'GET', `/locations/${o.locationId}/tour/space`)).json().status).toBe('processing');
+    await due(o);
+    const ready = (await call(o, 'GET', `/locations/${o.locationId}/tour/space`)).json();
+    expect(ready).toMatchObject({ status: 'ready', error: null, pose: DEFAULT_POSE, spots: [], published: null, hasChanges: true });
+    expect(ready.model.url).toMatch(/^\/api\/spaces\/[0-9a-f-]{36}\.spz$/);
+
+    // Stored as .spz (gzip), several times smaller than the .ply the service returned.
+    const file = await spaceApp.inject({ method: 'GET', url: ready.model.url.replace('/api', '') });
+    expect(file.statusCode).toBe(200);
+    expect(file.headers['cache-control']).toContain('immutable');
+    expect([...file.rawPayload.subarray(0, 2)]).toEqual([0x1f, 0x8b]);
+    expect(file.rawPayload.length).toBe(ready.model.bytes);
+    expect(file.rawPayload.length).toBeLessThan(demoRoomPly().length / 4);
+    expect((await spaceApp.inject({ method: 'GET', url: '/spaces/..%2F..%2Fetc%2Fpasswd' })).statusCode).toBe(404);
+  });
+
+  it('levels the model, tags dishes, publishes, and shows guests the walk-through', async () => {
+    const o = await cafe('space-publish@cafe.test');
+    await sendVideo(o);
+    now += 61_000;
+    await due(o);
+    await call(o, 'GET', `/locations/${o.locationId}/tour/space`);
+    const base = `/locations/${o.locationId}/tour/space`;
+
+    // A quarter turn about X levels a scan that came out on its side; the start is eye height.
+    const pose = { rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2], start: [0, 1.6, 2], yaw: 0.5 };
+    expect((await call(o, 'PUT', `${base}/pose`, pose)).json().pose).toEqual(pose);
+    expect((await call(o, 'PUT', `${base}/pose`, { ...pose, rotation: [1, 1, 0, 0] })).statusCode).toBe(400);
+
+    const tag = (await call(o, 'POST', `${base}/spots`, { position: [1, 0.8, -1], kind: 'dish', itemId: o.dishId })).json().spots;
+    expect(tag).toEqual([expect.objectContaining({ kind: 'dish', itemId: o.dishId, position: [1, 0.8, -1] })]);
+    await call(o, 'POST', `${base}/spots`, { position: [0, 2, -2.5], kind: 'info', labelEn: 'Counter', labelAr: 'الكاونتر' });
+    // Tags need a dish of this place, or a label.
+    const other = await cafe('space-other@cafe.test');
+    expect((await call(o, 'POST', `${base}/spots`, { position: [0, 0, 0], kind: 'dish', itemId: other.dishId })).json()).toEqual({ error: 'invalid', issues: ['itemId'] });
+    expect((await call(o, 'POST', `${base}/spots`, { position: [0, 0, 0], kind: 'info' })).statusCode).toBe(400);
+    const edited = (await call(o, 'PATCH', `${base}/spots/${tag[0].id}`, { position: [1.2, 0.8, -1], kind: 'dish', itemId: o.dishId })).json();
+    expect(edited.spots[0].position).toEqual([1.2, 0.8, -1]);
+    // Someone else's place can't be touched.
+    expect((await call(other, 'PUT', `${base}/pose`, pose)).statusCode).toBe(404);
+
+    // Nothing is public until it's published.
+    expect((await spaceApp.inject({ method: 'GET', url: `/public/tour/${o.slug}` })).statusCode).toBe(404);
+    const pub = await call(o, 'POST', `${base}/publish`);
+    expect(pub.statusCode).toBe(201);
+    expect(pub.json()).toMatchObject({ hasChanges: false, published: { at: expect.any(String) } });
+
+    const guest = (await spaceApp.inject({ method: 'GET', url: `/public/tour/${o.slug}` })).json();
+    expect(guest.scenes).toEqual([]);
+    expect(guest.space).toMatchObject({ pose, poster: null });
+    expect(guest.space.spots.map((s: { kind: string; dish: { nameEn: string } | null; labelEn: string | null }) => [s.kind, s.dish?.nameEn ?? s.labelEn])).toEqual([
+      ['dish', 'Cardamom Latte'],
+      ['info', 'Counter'],
+    ]);
+    expect((await spaceApp.inject({ method: 'GET', url: guest.space.model.url.replace('/api', '') })).statusCode).toBe(200);
+    // The menu's card leads with the 3D walk-through.
+    expect((await spaceApp.inject({ method: 'GET', url: `/public/menu/${o.slug}` })).json().tour).toMatchObject({ kind: 'space', scenes: 0, cover: null });
+
+    // A new recording: the published walk-through stays live until the new one is published.
+    const publishedUrl = guest.space.model.url;
+    expect((await sendVideo(o)).json()).toMatchObject({ status: 'queued', spots: [], model: null, published: { at: expect.any(String) } });
+    expect((await spaceApp.inject({ method: 'GET', url: publishedUrl.replace('/api', '') })).statusCode).toBe(200);
+    // Throwing the new draft away brings back the published one to edit.
+    const back = (await call(o, 'DELETE', base)).json();
+    expect(back).toMatchObject({ status: 'ready', hasChanges: false, model: { url: publishedUrl } });
+    expect(back.spots).toHaveLength(2);
+
+    // Unpublished, with no photo tour either, guests get nothing.
+    await call(o, 'DELETE', `${base}/publish`);
+    expect((await spaceApp.inject({ method: 'GET', url: `/public/tour/${o.slug}` })).statusCode).toBe(404);
+    expect((await spaceApp.inject({ method: 'GET', url: `/public/menu/${o.slug}` })).json().tour).toBeNull();
+  });
+
+  it('reports a failed build so the owner can record again', async () => {
+    const o = await cafe('space-fail@cafe.test');
+    const failing: SpaceBuilder = { ...builder, check: async () => ({ state: 'failed' }) };
+    const failApp = await buildApp(env, db, { store, builder: failing, models });
+    try {
+      const body = video();
+      await failApp.inject({ method: 'POST', url: `/locations/${o.locationId}/tour/space`, headers: { cookie: o.cookie, ...body.headers }, payload: body.payload });
+      const res = (await failApp.inject({ method: 'GET', url: `/locations/${o.locationId}/tour/space`, headers: { cookie: o.cookie } })).json();
+      expect(res).toMatchObject({ status: 'failed', error: 'failed', model: null });
+      // A failed build doesn't block the next one.
+      const again = video();
+      expect((await failApp.inject({ method: 'POST', url: `/locations/${o.locationId}/tour/space`, headers: { cookie: o.cookie, ...again.headers }, payload: again.payload })).statusCode).toBe(201);
+    } finally {
+      await failApp.close();
+    }
   });
 });
 

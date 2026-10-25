@@ -36,7 +36,9 @@ export function GuestTour({
 }) {
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState<Spot | null>(null);
-  const player = useTourPlayer(tour.scenes, index, setIndex);
+  // The guided tour starts as soon as it opens. Pause or tapping a spot stops it; tapping a scene
+  // jumps there and carries on.
+  const player = useTourPlayer(tour.scenes, index, setIndex, true);
   const scene = tour.scenes[index]!;
   const name = pick(tour.name.en, tour.name.ar, locale);
   const sceneName = (s: PublicTour['scenes'][number], i: number) => pick(s.nameEn, s.nameAr, locale) || `${i + 1}`;

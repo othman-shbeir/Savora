@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AA, checkTheme, contrast, fixContrast, PRESETS, themeAllowed } from './themes';
+import { AA, checkTheme, contrast, CustomThemeInput, DEFAULT_STYLE, fixContrast, PRESETS, styleOf, themeAllowed } from './themes';
 
 describe('contrast', () => {
   it('matches the WCAG reference values', () => {
@@ -47,5 +47,23 @@ describe('fixContrast', () => {
   it('works on dark themes by lightening text', () => {
     const dim = { bg: '#111111', surface: '#1C1C1C', primary: '#7A2E28', accent: '#E3B45B', ink: '#555555', muted: '#444444' };
     expect(checkTheme(fixContrast(dim)).ok).toBe(true);
+  });
+});
+
+describe('theme style', () => {
+  it('gives every preset the default look, so existing menus keep theirs', () => {
+    for (const p of PRESETS) expect(styleOf(p)).toEqual({ ...DEFAULT_STYLE, font: p.font });
+  });
+
+  it('reads stored values defensively', () => {
+    expect(styleOf({ font: 'geometric', corners: 'sharp', header: 'plain', layout: 'compact', boldPrices: true })).toEqual({ font: 'geometric', corners: 'sharp', header: 'plain', layout: 'compact', boldPrices: true });
+    // A value from an older or newer version falls back instead of breaking the menu.
+    expect(styleOf({ font: 'comic', corners: 7, header: null, boldPrices: 'yes' })).toEqual(DEFAULT_STYLE);
+  });
+
+  it('fills in the style when saving a theme that only has colours', () => {
+    const colors = PRESETS[0]!.colors;
+    expect(CustomThemeInput.parse({ nameEn: 'Mine', colors })).toMatchObject({ ...DEFAULT_STYLE, nameAr: null });
+    expect(CustomThemeInput.safeParse({ nameEn: 'Mine', colors, layout: 'grid' }).success).toBe(false);
   });
 });

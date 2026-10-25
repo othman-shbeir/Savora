@@ -12,6 +12,8 @@ import {
   tourScore,
   tourSeconds,
   type PlanId,
+  modelUrl,
+  type PublicSpace,
   type PublicTour,
   type TourDraft,
   type TourScene,
@@ -26,6 +28,7 @@ import { locationAccess } from '../lib/access';
 import { locationPaused } from '../lib/billing';
 import { NotAnImage, processImage, type MediaStore } from '../lib/media';
 import { measurePhoto } from '../lib/tour-quality';
+import { loadSpace } from './space';
 
 type Location = typeof schema.locations.$inferSelect;
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -73,7 +76,7 @@ async function snapshotOf(db: Db | Tx, scenes: TourScene[]): Promise<TourSnapsho
   };
 }
 
-async function loadDraft(db: Db, loc: Location): Promise<TourDraft> {
+async function loadDraft(db: Db, loc: Location, spaceAvailable: boolean): Promise<TourDraft> {
   const scenes = await loadScenes(db, loc.id);
   const [tour] = await db.select().from(schema.tours).where(eq(schema.tours.locationId, loc.id)).limit(1);
   const [version] = await db.select({ id: schema.menuVersions.id }).from(schema.menuVersions).where(eq(schema.menuVersions.locationId, loc.id)).limit(1);
@@ -93,18 +96,22 @@ async function loadDraft(db: Db, loc: Location): Promise<TourDraft> {
     published,
     hasChanges: tour?.published ? canonicalJson(tour.published) !== canonicalJson(await snapshotOf(db, scenes)) : scenes.length > 0,
     dishes: items.map(({ photoId, ...i }) => ({ ...i, photo: photoOf(photoId) })),
+    space: await loadSpace(db, loc.id, spaceAvailable),
   };
 }
 
-/** A published tour's card on the guest menu, or null. */
+/** A published tour's card on the guest menu, or null. The 3D walk-through leads when there is one. */
 export async function tourTeaser(db: Db, loc: Pick<Location, 'id' | 'organizationId'>, plan: PlanId): Promise<TourTeaser | null> {
   if (!can(plan, 'virtualTrial')) return null;
   const [tour] = await db.select({ published: schema.tours.published }).from(schema.tours).where(eq(schema.tours.locationId, loc.id)).limit(1);
+  const [space] = await db.select({ published: schema.tourSpaces.published }).from(schema.tourSpaces).where(eq(schema.tourSpaces.locationId, loc.id)).limit(1);
   const scenes = tour?.published?.scenes ?? [];
-  return scenes.length ? { scenes: scenes.length, seconds: tourSeconds(scenes), cover: photoOf(scenes[0]!.photoId)! } : null;
+  const firstPhoto = scenes.length ? photoOf(scenes[0]!.photoId) : null;
+  if (space?.published) return { kind: 'space', scenes: scenes.length, seconds: tourSeconds(scenes), cover: photoOf(space.published.posterId) ?? firstPhoto };
+  return scenes.length ? { kind: 'photos', scenes: scenes.length, seconds: tourSeconds(scenes), cover: firstPhoto } : null;
 }
 
-export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
+export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore, spaceAvailable = false) {
   const auth = { preHandler: requireUser };
 
   /** The location, if the caller may work on it and the plan includes the Virtual trial. */
@@ -191,7 +198,7 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
   app.get('/locations/:locationId/tour', auth, async (req, reply) => {
     const loc = await tourLocation(req, reply, (req.params as { locationId: string }).locationId);
     if (!loc) return;
-    return loadDraft(db, loc);
+    return loadDraft(db, loc, spaceAvailable);
   });
 
   app.post('/locations/:locationId/tour/scenes', auth, async (req, reply) => {
@@ -207,7 +214,7 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
       let position = (row?.p ?? -1) + 1;
       await tx.insert(schema.tourScenes).values(photos.map((p) => ({ locationId: loc.id, photoId: p.mediaId, position: position++, quality: quality(p.measure) })));
     });
-    return reply.code(201).send(await loadDraft(db, loc));
+    return reply.code(201).send(await loadDraft(db, loc, spaceAvailable));
   });
 
   // A retake: a new photo for the same scene, keeping its name and spots.
@@ -218,7 +225,7 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
     if (!photos) return;
     if (!photos.length) return reply.code(400).send({ error: 'invalid' });
     await db.update(schema.tourScenes).set({ photoId: photos[0]!.mediaId, quality: quality(photos[0]!.measure) }).where(eq(schema.tourScenes.id, found.scene.id));
-    return loadDraft(db, found.loc);
+    return loadDraft(db, found.loc, spaceAvailable);
   });
 
   app.patch('/tour/scenes/:id', auth, async (req, reply) => {
@@ -227,7 +234,7 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
     const body = SceneInput.safeParse(req.body);
     if (!body.success) return invalid(reply, body.error);
     await db.update(schema.tourScenes).set(body.data).where(eq(schema.tourScenes.id, found.scene.id));
-    return loadDraft(db, found.loc);
+    return loadDraft(db, found.loc, spaceAvailable);
   });
 
   app.post('/tour/scenes/:id/move', auth, async (req, reply) => {
@@ -241,14 +248,14 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
       order.splice(Math.min(body.data.to, order.length), 0, found.scene.id);
       for (const [i, id] of order.entries()) await tx.update(schema.tourScenes).set({ position: i }).where(eq(schema.tourScenes.id, id));
     });
-    return loadDraft(db, found.loc);
+    return loadDraft(db, found.loc, spaceAvailable);
   });
 
   app.delete('/tour/scenes/:id', auth, async (req, reply) => {
     const found = await sceneLocation(req, reply, (req.params as { id: string }).id);
     if (!found) return;
     await db.delete(schema.tourScenes).where(eq(schema.tourScenes.id, found.scene.id));
-    return loadDraft(db, found.loc);
+    return loadDraft(db, found.loc, spaceAvailable);
   });
 
   // ---------- Spots ----------
@@ -262,7 +269,7 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
     if (n >= MAX_SPOTS) return reply.code(409).send({ error: 'too_many_spots', max: MAX_SPOTS });
     if (!(await spotTargetsOk(found.loc.id, found.scene.id, body.data))) return reply.code(400).send({ error: 'invalid', issues: [body.data.kind === 'dish' ? 'itemId' : 'targetSceneId'] });
     await db.insert(schema.tourSpots).values({ sceneId: found.scene.id, ...spotValues(body.data) });
-    return reply.code(201).send(await loadDraft(db, found.loc));
+    return reply.code(201).send(await loadDraft(db, found.loc, spaceAvailable));
   });
 
   app.patch('/tour/spots/:id', auth, async (req, reply) => {
@@ -272,14 +279,14 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
     if (!body.success) return invalid(reply, body.error);
     if (!(await spotTargetsOk(found.loc.id, found.scene.id, body.data))) return reply.code(400).send({ error: 'invalid', issues: [body.data.kind === 'dish' ? 'itemId' : 'targetSceneId'] });
     await db.update(schema.tourSpots).set(spotValues(body.data)).where(eq(schema.tourSpots.id, found.spot.id));
-    return loadDraft(db, found.loc);
+    return loadDraft(db, found.loc, spaceAvailable);
   });
 
   app.delete('/tour/spots/:id', auth, async (req, reply) => {
     const found = await spotLocation(req, reply, (req.params as { id: string }).id);
     if (!found) return;
     await db.delete(schema.tourSpots).where(eq(schema.tourSpots.id, found.spot.id));
-    return loadDraft(db, found.loc);
+    return loadDraft(db, found.loc, spaceAvailable);
   });
 
   // ---------- Publishing ----------
@@ -288,20 +295,20 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
     const loc = await tourLocation(req, reply, (req.params as { locationId: string }).locationId, ['owner', 'admin']);
     if (!loc) return;
     if (await locationPaused(db, loc)) return reply.code(402).send({ error: 'upgrade_required', feature: 'locations' });
-    const draft = await loadDraft(db, loc);
+    const draft = await loadDraft(db, loc, spaceAvailable);
     const missing = draft.checks.filter((c) => c.required && !c.ok).map((c) => c.key);
     if (missing.length) return reply.code(409).send({ error: 'not_ready', missing });
     const snapshot = await snapshotOf(db, draft.scenes);
     const now = new Date();
     await db.insert(schema.tours).values({ locationId: loc.id, published: snapshot, publishedAt: now }).onConflictDoUpdate({ target: schema.tours.locationId, set: { published: snapshot, publishedAt: now } });
-    return reply.code(201).send(await loadDraft(db, loc));
+    return reply.code(201).send(await loadDraft(db, loc, spaceAvailable));
   });
 
   app.delete('/locations/:locationId/tour/publish', auth, async (req, reply) => {
     const loc = await tourLocation(req, reply, (req.params as { locationId: string }).locationId, ['owner', 'admin']);
     if (!loc) return;
     await db.update(schema.tours).set({ published: null, publishedAt: null }).where(eq(schema.tours.locationId, loc.id));
-    return loadDraft(db, loc);
+    return loadDraft(db, loc, spaceAvailable);
   });
 
   // ---------- Guests ----------
@@ -310,21 +317,37 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
     const { slug } = req.params as { slug: string };
     if (!/^[a-z0-9][a-z0-9-]{0,62}$/i.test(slug)) return reply.code(404).send({ error: 'not_found' });
     const [row] = await db
-      .select({ location: schema.locations, brand: schema.brands, tour: schema.tours })
+      .select({ location: schema.locations, brand: schema.brands, tour: schema.tours, space: schema.tourSpaces })
       .from(schema.locations)
       .innerJoin(schema.brands, eq(schema.brands.id, schema.locations.brandId))
-      .innerJoin(schema.tours, eq(schema.tours.locationId, schema.locations.id))
+      .leftJoin(schema.tours, eq(schema.tours.locationId, schema.locations.id))
+      .leftJoin(schema.tourSpaces, eq(schema.tourSpaces.locationId, schema.locations.id))
       .where(sql`lower(${schema.locations.slug}) = ${slug.toLowerCase()}`)
       .limit(1);
-    const snapshot = row?.tour.published;
-    if (!row || !snapshot?.scenes.length || row.location.status !== 'live') return reply.code(404).send({ error: 'not_found' });
+    // Either kind of walk-through is enough: the 3D one, the photo tour, or both.
+    const snapshot = row?.tour?.published ?? { scenes: [] };
+    const spaceSnap = row?.space?.published ?? null;
+    if (!row || (!snapshot.scenes.length && !spaceSnap) || row.location.status !== 'live') return reply.code(404).send({ error: 'not_found' });
     if (!can(await planOf(db, row.location.organizationId), 'virtualTrial') || (await locationPaused(db, row.location))) return reply.code(404).send({ error: 'not_found' });
     // Dishes come from the published menu, so guests see the same names and prices as on the menu.
     const [menu] = await db.select({ content: schema.menuVersions.content }).from(schema.menuVersions).where(eq(schema.menuVersions.locationId, row.location.id)).orderBy(desc(schema.menuVersions.version)).limit(1);
     const dishes = new Map((menu?.content.categories ?? []).flatMap((c) => c.items).map((i) => [i.id, i]));
     const sceneIds = new Set(snapshot.scenes.map((s) => s.id));
+    const dishOf = (itemId: string | null) => {
+      const d = itemId ? dishes.get(itemId) : undefined;
+      return d ? { id: d.id, nameEn: d.nameEn, nameAr: d.nameAr, descriptionEn: d.descriptionEn, descriptionAr: d.descriptionAr, priceMinor: d.priceMinor, photo: d.photo } : null;
+    };
+    const space: PublicSpace | null = spaceSnap
+      ? {
+          model: { url: modelUrl(spaceSnap.modelKey), bytes: spaceSnap.bytes },
+          pose: spaceSnap.pose,
+          poster: photoOf(spaceSnap.posterId),
+          spots: spaceSnap.spots.filter((p) => p.kind !== 'dish' || dishes.has(p.itemId!)).map(({ itemId, ...p }) => ({ ...p, dish: dishOf(itemId) })),
+        }
+      : null;
     const body: PublicTour = {
       slug: row.location.slug,
+      space,
       name: { en: row.brand.nameEn, ar: row.brand.nameAr },
       currency: menu?.content.currency ?? row.location.currency,
       scenes: snapshot.scenes.map(({ photoId, spots, ...s }) => ({
@@ -332,10 +355,7 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
         photo: photoOf(photoId)!,
         spots: spots
           .filter((p) => (p.kind === 'dish' ? dishes.has(p.itemId!) : p.kind === 'scene' ? sceneIds.has(p.targetSceneId!) : true))
-          .map(({ itemId, ...p }) => {
-            const d = itemId ? dishes.get(itemId) : undefined;
-            return { ...p, dish: d ? { id: d.id, nameEn: d.nameEn, nameAr: d.nameAr, descriptionEn: d.descriptionEn, descriptionAr: d.descriptionAr, priceMinor: d.priceMinor, photo: d.photo } : null };
-          }),
+          .map(({ itemId, ...p }) => ({ ...p, dish: dishOf(itemId) })),
       })),
     };
     return reply.header('cache-control', 'public, max-age=0, s-maxage=30, stale-while-revalidate=60').send(body);

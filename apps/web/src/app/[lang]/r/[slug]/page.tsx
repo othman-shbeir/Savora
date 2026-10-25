@@ -11,6 +11,7 @@ import { getPublicMenu, MENU_ORIGIN } from '@/lib/api';
 import { jsonLdText, menuJsonLd } from '@/lib/menu-jsonld';
 import { descriptionOf, primaryName } from '@/lib/menu-text';
 import { cx } from '@/lib/cx';
+import { menuFontVars } from '@/lib/menu-fonts';
 import { openStatusText } from '@/lib/open-status';
 import { plural } from '@/lib/plural';
 import { getDictionary, getLocale } from '../../dictionaries';
@@ -67,7 +68,9 @@ export default async function GuestMenuPage({ params }: Props) {
   const tagline = pick(menu.brand.taglineEn, menu.brand.taglineAr, locale);
   const price = (minor: number) => formatPrice(minor, menu.menu.currency);
   const sections = menu.menu.categories.map((c) => ({ id: `s-${c.id.slice(0, 8)}`, label: primaryName(c, locale), category: c }));
-  // The first dish with a photo leads the menu, large.
+  const header = menu.theme?.header ?? 'photo';
+  const layout = menu.theme?.layout ?? 'list';
+  // The first dish with a photo leads the menu, large ("cards" shows every photo that way).
   const featuredId = menu.menu.categories[0]?.items.find((i) => i.photo)?.id;
   const place = menu.location;
   const status = openStatusText(place.hours, place.closures, place.timezone, new Date(), g, locale);
@@ -92,31 +95,28 @@ export default async function GuestMenuPage({ params }: Props) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdText(menuJsonLd(menu, `${MENU_ORIGIN}/${locale}/r/${menu.slug}`, locale)) }} />
       <ScanBeacon slug={menu.slug} locale={locale} />
       <header>
-        <div className="relative h-[200px] overflow-hidden bg-[#1f1f1f]">
-          {menu.cover ? (
-            <img src={menu.cover.url} alt="" className="size-full object-cover" fetchPriority="high" />
-          ) : (
-            <div
-              aria-hidden
-              className="size-full bg-[radial-gradient(circle_at_80%_10%,color-mix(in_srgb,var(--brand)_55%,transparent),transparent_55%),radial-gradient(circle_at_10%_90%,color-mix(in_srgb,var(--accent,var(--gold))_35%,transparent),transparent_50%)]"
-            />
-          )}
-          <Link
-            href={`/${other}/r/${menu.slug}`}
-            hrefLang={other}
-            lang={other}
-            className="absolute end-4 top-4 rounded-full bg-black/55 p-1 text-caption font-semibold text-white backdrop-blur"
-          >
-            {/* The pill sits at the reading end, but always reads "EN | عربي", as in the design. */}
-            <span className="sr-only">{g.otherLanguageLabel}</span>
-            <span dir="ltr" className="flex">
-              <span className={locale === 'en' ? 'rounded-full bg-white px-3 py-1 text-[#1c1c1c]' : 'px-3 py-1'}>EN</span>
-              <span className={locale === 'ar' ? 'rounded-full bg-white px-3 py-1 text-[#1c1c1c]' : 'px-3 py-1'}>عربي</span>
-            </span>
-          </Link>
-        </div>
+        {/* The theme picks the top: the cover photo, a band of the primary colour, or no banner. */}
+        {header === 'plain' ? (
+          <div className="flex justify-end px-4 pt-4">
+            <LanguagePill href={`/${other}/r/${menu.slug}`} other={other} label={g.otherLanguageLabel} locale={locale} />
+          </div>
+        ) : (
+          <div className={cx('relative overflow-hidden', header === 'color' ? 'h-[132px] bg-brand-fill' : 'h-[200px] bg-[#1f1f1f]')}>
+            {header === 'color' ? (
+              <div aria-hidden className="size-full bg-[radial-gradient(circle_at_85%_0%,color-mix(in_srgb,var(--accent,var(--gold))_45%,transparent),transparent_60%)]" />
+            ) : menu.cover ? (
+              <img src={menu.cover.url} alt="" className="size-full object-cover" fetchPriority="high" />
+            ) : (
+              <div
+                aria-hidden
+                className="size-full bg-[radial-gradient(circle_at_80%_10%,color-mix(in_srgb,var(--brand)_55%,transparent),transparent_55%),radial-gradient(circle_at_10%_90%,color-mix(in_srgb,var(--accent,var(--gold))_35%,transparent),transparent_50%)]"
+              />
+            )}
+            <LanguagePill href={`/${other}/r/${menu.slug}`} other={other} label={g.otherLanguageLabel} locale={locale} className="absolute end-4 top-4" />
+          </div>
+        )}
         <div className="px-5">
-          <Badge initial={name.slice(0, 1)} logo={menu.brand.logo} className="-mt-9 ring-4 ring-surface" />
+          <Badge initial={name.slice(0, 1)} logo={menu.brand.logo} className={header === 'plain' ? 'mt-2' : '-mt-9 ring-4 ring-surface'} />
           <h1 className="mt-3 text-heading-l leading-tight font-semibold tracking-[-0.02em]">{name}</h1>
           {tagline && <p className="mt-1 text-body-m text-muted">{tagline}</p>}
           {(status || address) && (
@@ -146,7 +146,7 @@ export default async function GuestMenuPage({ params }: Props) {
                   href={a.href}
                   {...(a.href.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                   className={cx(
-                    'grid min-h-[60px] place-items-center content-center gap-1 rounded-2xl border px-2 text-caption font-semibold transition-colors',
+                    'grid min-h-[60px] place-items-center content-center gap-1 rounded-[var(--r-tile)] border px-2 text-caption font-semibold transition-colors',
                     a.main ? 'border-ink bg-ink text-surface' : 'border-line bg-surface text-ink hover:bg-surface-2',
                   )}
                 >
@@ -175,19 +175,19 @@ export default async function GuestMenuPage({ params }: Props) {
               <span className="text-caption text-muted">{plural(locale, category.items.length, g.items)}</span>
             </div>
             <ul>
-              {category.items.map((dish, i) =>
-                dish.id === featuredId ? (
-                  <Featured key={dish.id} dish={dish} locale={locale} price={price(dish.priceMinor)} label={g.favourite} />
-                ) : (
-                  <Row key={dish.id} dish={dish} locale={locale} price={price(dish.priceMinor)} last={i === category.items.length - 1} />
-                ),
-              )}
+              {category.items.map((dish, i) => {
+                const last = i === category.items.length - 1;
+                if (layout === 'compact') return <Compact key={dish.id} dish={dish} locale={locale} price={price(dish.priceMinor)} last={last} />;
+                if (dish.photo && (dish.id === featuredId || layout === 'cards'))
+                  return <Featured key={dish.id} dish={dish} locale={locale} price={price(dish.priceMinor)} label={dish.id === featuredId ? g.favourite : null} />;
+                return <Row key={dish.id} dish={dish} locale={locale} price={price(dish.priceMinor)} last={last} />;
+              })}
             </ul>
           </section>
         ))}
       </div>
       {place.pin && (
-        <section aria-labelledby="find-us" className="mx-5 mt-8 overflow-hidden rounded-2xl border border-line">
+        <section aria-labelledby="find-us" className="mx-5 mt-8 overflow-hidden rounded-[var(--r-tile)] border border-line">
           <GuestMap pin={place.pin} radiusM={place.pin.deliveryRadiusM} initial={name.slice(0, 1)} label={fill(g.mapLabel, { name })} />
           <div className="flex items-center justify-between gap-3 p-4">
             <div className="min-w-0">
@@ -198,7 +198,7 @@ export default async function GuestMenuPage({ params }: Props) {
               {place.pin.deliveryRadiusM && <p className="text-caption text-muted">{fill(g.delivers, { km: (place.pin.deliveryRadiusM / 1000).toFixed(1) })}</p>}
             </div>
             {place.directions && (
-              <a href={place.directions} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-xl bg-ink px-3.5 py-2 text-caption font-semibold text-surface">
+              <a href={place.directions} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-[var(--r-thumb)] bg-ink px-3.5 py-2 text-caption font-semibold text-surface">
                 {g.actionDirections}
               </a>
             )}
@@ -217,13 +217,27 @@ function Frame({ theme, children }: { theme?: Theme; children: React.ReactNode }
   const themed = theme && theme.ref !== 'auto';
   return (
     <div
-      className="min-h-dvh bg-bg text-ink sm:py-10"
+      className={cx('menu-look min-h-dvh bg-bg text-ink sm:py-10', menuFontVars)}
       style={themed ? (themeVars(theme.colors) as React.CSSProperties) : undefined}
-      data-menu-font={themed && theme.font === 'serif' ? 'serif' : undefined}
+      data-menu-font={theme && theme.font !== 'sans' ? theme.font : undefined}
+      data-corners={theme?.corners}
       data-bold-prices={theme?.boldPrices ? '' : undefined}
     >
-      <main className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-surface sm:min-h-0 sm:overflow-clip sm:rounded-[28px] sm:border sm:border-line sm:shadow-raised">{children}</main>
+      <main className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-surface sm:min-h-0 sm:overflow-clip sm:rounded-[var(--r-card)] sm:border sm:border-line sm:shadow-raised">{children}</main>
     </div>
+  );
+}
+
+/** EN | عربي switch. It sits at the reading end, but always reads "EN | عربي", as in the design. */
+function LanguagePill({ href, other, label, locale, className }: { href: string; other: Locale; label: string; locale: Locale; className?: string }) {
+  return (
+    <Link href={href} hrefLang={other} lang={other} className={cx('rounded-full bg-black/55 p-1 text-caption font-semibold text-white backdrop-blur', className)}>
+      <span className="sr-only">{label}</span>
+      <span dir="ltr" className="flex">
+        <span className={locale === 'en' ? 'rounded-full bg-white px-3 py-1 text-[#1c1c1c]' : 'px-3 py-1'}>EN</span>
+        <span className={locale === 'ar' ? 'rounded-full bg-white px-3 py-1 text-[#1c1c1c]' : 'px-3 py-1'}>عربي</span>
+      </span>
+    </Link>
   );
 }
 
@@ -231,7 +245,7 @@ function Badge({ initial, logo, className = '' }: { initial: string; logo?: Phot
   return (
     <span
       aria-hidden
-      className={`relative grid size-16 place-items-center overflow-hidden rounded-2xl bg-brand-fill text-heading-m font-bold text-[var(--on-brand,#fff)] shadow-[0_10px_24px_color-mix(in_srgb,var(--brand)_30%,transparent)] ${className}`}
+      className={`relative grid size-16 place-items-center overflow-hidden rounded-[var(--r-tile)] bg-brand-fill text-heading-m font-bold text-[var(--on-brand,#fff)] shadow-[0_10px_24px_color-mix(in_srgb,var(--brand)_30%,transparent)] ${className}`}
     >
       {logo ? <img src={logo.url} alt="" className="absolute inset-0 size-full bg-white object-contain p-1" /> : initial}
     </span>
@@ -262,14 +276,14 @@ const ICONS = {
   ),
 };
 
-function Featured({ dish, locale, price, label }: { dish: Dish; locale: Locale; price: string; label: string }) {
+function Featured({ dish, locale, price, label }: { dish: Dish; locale: Locale; price: string; label: string | null }) {
   const desc = descriptionOf(dish, locale);
   return (
     <li id={`d-${dish.id.slice(0, 8)}`} className="scroll-mt-20 border-b border-dashed border-line py-4">
-      <div className="relative aspect-[16/10] overflow-hidden rounded-2xl bg-surface-2">
-        <img src={dish.photo!.url} alt={primaryName(dish, locale)} className="size-full object-cover" />
-        <span className="absolute start-3 top-3 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">{label}</span>
-        <span dir="ltr" className="menu-price absolute end-3 bottom-3 rounded-lg bg-surface px-2.5 py-1 font-mono text-body-s font-semibold text-brand shadow">
+      <div className="relative aspect-[16/10] overflow-hidden rounded-[var(--r-tile)] bg-surface-2">
+        <img src={dish.photo!.url} alt={primaryName(dish, locale)} loading={label ? undefined : 'lazy'} className="size-full object-cover" />
+        {label && <span className="absolute start-3 top-3 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">{label}</span>}
+        <span dir="ltr" className="menu-price absolute end-3 bottom-3 rounded-[var(--r-chip)] bg-surface px-2.5 py-1 font-mono text-body-s font-semibold text-brand shadow">
           {price}
         </span>
       </div>
@@ -286,11 +300,28 @@ function Row({ dish, locale, price, last }: { dish: Dish; locale: Locale; price:
       <div className="min-w-0 flex-1">
         <h3 className="text-title-s font-semibold">{primaryName(dish, locale)}</h3>
         {desc && <p className="mt-0.5 text-body-s text-muted">{desc}</p>}
-        <span dir="ltr" className="menu-price mt-2 inline-block rounded-md bg-[var(--price-bg,var(--brand-soft))] px-2 py-0.5 font-mono text-caption font-semibold text-brand">
+        <span dir="ltr" className="menu-price mt-2 inline-block rounded-[var(--r-chip)] bg-[var(--price-bg,var(--brand-soft))] px-2 py-0.5 font-mono text-caption font-semibold text-brand">
           {price}
         </span>
       </div>
-      {dish.photo && <img src={dish.photo.thumbUrl} alt="" width={84} height={84} loading="lazy" className="size-21 shrink-0 rounded-xl object-cover" />}
+      {dish.photo && <img src={dish.photo.thumbUrl} alt="" width={84} height={84} loading="lazy" className="size-21 shrink-0 rounded-[var(--r-thumb)] object-cover" />}
+    </li>
+  );
+}
+
+/** Text only, like a printed menu: name, a dotted leader, the price; the description below. */
+function Compact({ dish, locale, price, last }: { dish: Dish; locale: Locale; price: string; last: boolean }) {
+  const desc = descriptionOf(dish, locale);
+  return (
+    <li id={`d-${dish.id.slice(0, 8)}`} className={`scroll-mt-20 py-3 ${last ? '' : 'border-b border-dashed border-line'}`}>
+      <div className="flex items-baseline gap-2">
+        <h3 className="text-title-s font-semibold">{primaryName(dish, locale)}</h3>
+        <span aria-hidden className="min-w-4 flex-1 translate-y-[-4px] border-b-2 border-dotted border-line-2" />
+        <span dir="ltr" className="menu-price shrink-0 font-mono text-body-s font-semibold text-brand">
+          {price}
+        </span>
+      </div>
+      {desc && <p className="mt-0.5 text-body-s text-muted">{desc}</p>}
     </li>
   );
 }

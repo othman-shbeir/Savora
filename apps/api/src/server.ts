@@ -1,9 +1,10 @@
 import { createDb } from '@savora/db';
-import { buildApp } from './app';
+import { buildApp, spaceServices } from './app';
 import { loadEnv } from './env';
 import { diskStore } from './lib/media';
 import { settleAll } from './lib/billing';
 import { purgeScanEvents } from './routes/scans';
+import { advanceSpaces } from './routes/space';
 import { seedDemo, seedDemoBilling, seedDemoCover, seedDemoMenu, seedDemoScans, seedDemoSettings } from './seed';
 
 const env = loadEnv();
@@ -22,7 +23,8 @@ if (env.SEED_DEMO) {
   if (hours) console.log(`Seeded ${hours} hours of demo scans`);
 }
 
-const app = await buildApp(env, db, { store });
+const spaces = spaceServices(env);
+const app = await buildApp(env, db, { store, ...spaces });
 
 // Raw scan events are only kept long enough to spot repeat opens; counts live on in scan_hourly.
 await purgeScanEvents(db);
@@ -31,6 +33,11 @@ setInterval(() => {
   purgeScanEvents(db).catch((e) => app.log.error(e));
   settleAll(db).catch((e) => app.log.error(e));
 }, 3_600_000).unref();
+
+// 3D walk-throughs being built at the scanning service: checked every half minute.
+setInterval(() => {
+  advanceSpaces(db, spaces.builder, spaces.models, app.log).catch((e) => app.log.error(e));
+}, 30_000).unref();
 
 const shutdown = async () => {
   await app.close();

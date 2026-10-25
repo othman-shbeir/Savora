@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { Closure, MenuSnapshot, ThemeColors, TourQuality, TourSnapshot, WeekHours } from '@savora/shared';
+import type { Closure, MenuSnapshot, SpacePose, SpaceSnapshot, SpaceSpot, ThemeColors, TourQuality, TourSnapshot, WeekHours } from '@savora/shared';
 import { boolean, check, doublePrecision, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -263,6 +263,10 @@ export const customThemes = pgTable('custom_themes', {
   colors: jsonb('colors').$type<ThemeColors>().notNull(),
   font: text('font').notNull().default('sans'),
   boldPrices: boolean('bold_prices').notNull().default(false),
+  // The rest of the look (see ThemeStyle in @savora/shared); the defaults are the presets' look.
+  corners: text('corners').notNull().default('soft'),
+  header: text('header').notNull().default('photo'),
+  layout: text('layout').notNull().default('list'),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 }, (t) => [index('custom_themes_org_idx').on(t.organizationId)]);
@@ -276,6 +280,29 @@ export const tours = pgTable('tours', {
   publishedAt: timestamp('published_at', { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+/** The 3D walk-through of a location: the current build, how it is shown, its tags, and what is
+ *  published. Model files are stored under a fresh key per build and never overwritten, so the
+ *  published model keeps working while a new one is built. */
+export const tourSpaces = pgTable('tour_spaces', {
+  locationId: uuid('location_id').primaryKey().references(() => locations.id, { onDelete: 'cascade' }),
+  status: text('status', { enum: ['queued', 'processing', 'ready', 'failed'] }).notNull(),
+  /** Which scanning service built it, and its job id there. */
+  provider: text('provider').notNull(),
+  jobId: text('job_id'),
+  error: text('error', { enum: ['rejected', 'failed', 'expired', 'convert_failed'] }),
+  modelKey: text('model_key'),
+  modelBytes: integer('model_bytes'),
+  pose: jsonb('pose').$type<SpacePose>(),
+  spots: jsonb('spots').$type<SpaceSpot[]>().notNull().default([]),
+  posterId: uuid('poster_id').references(() => media.id, { onDelete: 'set null' }),
+  published: jsonb('published').$type<SpaceSnapshot>(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Last time the service was asked how the build is going. */
+  checkedAt: timestamp('checked_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('tour_spaces_status_idx').on(t.status)]);
 
 /** A photo of the place, in tour order. */
 export const tourScenes = pgTable('tour_scenes', {

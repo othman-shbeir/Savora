@@ -74,80 +74,84 @@ export function TourViewer({
   const drift = !playing || !scale ? null : minX < -8 ? [at(0, pan.y), at(minX, pan.y)] : minY < -8 ? [at(pan.x, 0), at(pan.x, minY)] : [at(pan.x, pan.y), at(pan.x, pan.y, 1.08)];
 
 
+  // The photo layer takes the pointer for dragging; the overlays (children) sit beside it, not
+  // inside, so their buttons get their own clicks and stay visible to screen readers.
   return (
-    <div
-      ref={box}
-      role="img"
-      aria-label={label}
-      tabIndex={canPan ? 0 : -1}
-      onKeyDown={(e) => {
-        const step = 60;
-        const moves: Record<string, [number, number]> = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
-        const m = moves[e.key];
-        if (!m || !canPan) return;
-        e.preventDefault();
-        setPan({ x: pan.x + m[0], y: pan.y + m[1] });
-      }}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y, moved: false };
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d) return;
-        const dx = e.clientX - d.x;
-        const dy = e.clientY - d.y;
-        if (Math.abs(dx) + Math.abs(dy) > 5) d.moved = true;
-        if (d.moved && canPan) setPan({ x: d.px + dx, y: d.py + dy });
-      }}
-      onPointerUp={(e) => {
-        const d = drag.current;
-        drag.current = null;
-        if (!d || d.moved || !placing || !onPlace || !lw) return;
-        const r = e.currentTarget.getBoundingClientRect();
-        const x = (e.clientX - r.left - pan.x) / lw;
-        const y = (e.clientY - r.top - pan.y) / lh;
-        if (x >= 0 && x <= 1 && y >= 0 && y <= 1) onPlace(Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000);
-      }}
-      className={cx('relative touch-none overflow-hidden bg-[#161616] select-none', placing ? 'cursor-crosshair' : canPan ? 'cursor-grab active:cursor-grabbing' : '', className)}
-    >
-      {/* Positioned from the left in both reading directions: pan offsets are physical pixels. */}
-      {scale > 0 && (
-        <div
-          key={drift ? `${scene.id}-tour` : scene.id}
-          className={cx('absolute top-0 left-0 origin-center', drift && 'motion-safe:[animation:tour-drift_var(--dur)_ease-in-out_forwards]')}
-          style={{ width: lw, height: lh, transform: at(pan.x, pan.y), ...(drift ? { '--from': drift[0], '--to': drift[1], '--dur': `${seconds}s` } : {}) } as React.CSSProperties}
-        >
-          <img key={scene.id} src={scene.url} alt="" draggable={false} className="size-full animate-[fade_.4s_ease] object-cover" />
-          {spots.map((s, i) => {
-            const on = s.id === selectedSpotId;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onSpot?.(s.id)}
-                aria-pressed={on}
-                aria-label={s.label}
-                className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5"
-                style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%` }}
-              >
-                <span
-                  className={cx(
-                    'grid place-items-center rounded-full font-mono text-caption font-bold transition-transform',
-                    on ? 'size-10 bg-brand-fill text-white shadow-[0_0_0_6px_rgb(219_26_26/0.3),0_8px_18px_rgb(0_0_0/0.35)]' : 'size-8 bg-white text-[#1c1c1c] shadow-[0_0_0_5px_rgb(255_255_255/0.22),0_6px_14px_rgb(0_0_0/0.3)] hover:scale-110',
-                  )}
+    <div className={cx('relative overflow-hidden bg-[#161616]', className)}>
+      <div
+        ref={box}
+        role="group"
+        aria-label={label}
+        tabIndex={canPan ? 0 : -1}
+        onKeyDown={(e) => {
+          const step = 60;
+          const moves: Record<string, [number, number]> = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+          const m = moves[e.key];
+          if (!m || !canPan) return;
+          e.preventDefault();
+          setPan({ x: pan.x + m[0], y: pan.y + m[1] });
+        }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y, moved: false };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const dx = e.clientX - d.x;
+          const dy = e.clientY - d.y;
+          if (Math.abs(dx) + Math.abs(dy) > 5) d.moved = true;
+          if (d.moved && canPan) setPan({ x: d.px + dx, y: d.py + dy });
+        }}
+        onPointerUp={(e) => {
+          const d = drag.current;
+          drag.current = null;
+          if (!d || d.moved || !placing || !onPlace || !lw) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          const x = (e.clientX - r.left - pan.x) / lw;
+          const y = (e.clientY - r.top - pan.y) / lh;
+          if (x >= 0 && x <= 1 && y >= 0 && y <= 1) onPlace(Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000);
+        }}
+        className={cx('absolute inset-0 touch-none overflow-hidden select-none', placing ? 'cursor-crosshair' : canPan ? 'cursor-grab active:cursor-grabbing' : '')}
+      >
+        {/* Positioned from the left in both reading directions: pan offsets are physical pixels. */}
+        {scale > 0 && (
+          <div
+            key={drift ? `${scene.id}-tour` : scene.id}
+            className={cx('absolute top-0 left-0 origin-center', drift && 'motion-safe:[animation:tour-drift_var(--dur)_ease-in-out_forwards]')}
+            style={{ width: lw, height: lh, transform: at(pan.x, pan.y), ...(drift ? { '--from': drift[0], '--to': drift[1], '--dur': `${seconds}s` } : {}) } as React.CSSProperties}
+          >
+            <img key={scene.id} src={scene.url} alt="" draggable={false} className="size-full animate-[fade_.4s_ease] object-cover" />
+            {spots.map((s, i) => {
+              const on = s.id === selectedSpotId;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onSpot?.(s.id)}
+                  aria-pressed={on}
+                  aria-label={s.label}
+                  className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-2.5"
+                  style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%` }}
                 >
-                  {s.kind === 'scene' ? <Arrow /> : i + 1}
-                </span>
-                {!on && s.label && <span className="absolute start-full ms-2.5 hidden rounded-full border border-white/15 bg-[rgb(18_18_18/0.62)] px-2.5 py-1 text-caption font-semibold whitespace-nowrap text-white shadow-[0_10px_24px_rgb(0_0_0/0.28)] backdrop-blur sm:block">{s.label}</span>}
-              </button>
-            );
-          })}
-          {spotCard}
-        </div>
-      )}
+                  <span
+                    className={cx(
+                      'grid place-items-center rounded-full font-mono text-caption font-bold transition-transform',
+                      on ? 'size-10 bg-brand-fill text-white shadow-[0_0_0_6px_rgb(219_26_26/0.3),0_8px_18px_rgb(0_0_0/0.35)]' : 'size-8 bg-white text-[#1c1c1c] shadow-[0_0_0_5px_rgb(255_255_255/0.22),0_6px_14px_rgb(0_0_0/0.3)] hover:scale-110',
+                    )}
+                  >
+                    {s.kind === 'scene' ? <Arrow /> : i + 1}
+                  </span>
+                  {!on && s.label && <span className="absolute start-full ms-2.5 hidden rounded-full border border-white/15 bg-[rgb(18_18_18/0.62)] px-2.5 py-1 text-caption font-semibold whitespace-nowrap text-white shadow-[0_10px_24px_rgb(0_0_0/0.28)] backdrop-blur sm:block">{s.label}</span>}
+                </button>
+              );
+            })}
+            {spotCard}
+          </div>
+        )}
+      </div>
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(0_0_0/0.42)_0%,transparent_22%,transparent_58%,rgb(0_0_0/0.8)_100%)]" />
       {children}
     </div>
@@ -160,9 +164,10 @@ const Arrow = () => (
   </svg>
 );
 
-/** Steps through scenes for the guided tour: each stays for its own number of seconds. */
-export function useTourPlayer(scenes: Array<{ seconds: number }>, index: number, setIndex: (i: number) => void) {
-  const [playing, setPlaying] = useState(false);
+/** Steps through scenes for the guided tour: each stays for its own number of seconds. With
+ *  autoPlay it starts on its own (guests); otherwise it waits for play() (the owner's studio). */
+export function useTourPlayer(scenes: Array<{ seconds: number }>, index: number, setIndex: (i: number) => void, autoPlay = false) {
+  const [playing, setPlaying] = useState(autoPlay);
   const seconds = scenes[index]?.seconds;
   const count = scenes.length;
   useEffect(() => {

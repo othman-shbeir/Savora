@@ -10,7 +10,9 @@ import {
   isHex,
   presetByRef,
   PRESETS,
+  styleOf,
   themeAllowed,
+  ThemeStyleInput,
   type AssistantOption,
   type AssistantTurn,
   type ImportPayload,
@@ -38,10 +40,15 @@ const customTheme = (r: CustomRow): Theme => ({
   descAr: 'صُمّم مع مساعد المظاهر',
   tier: 'custom',
   colors: r.colors,
-  font: r.font === 'serif' ? 'serif' : 'sans',
-  boldPrices: r.boldPrices,
+  ...styleOf(r),
   tags: [isDark(r.colors) ? 'dark' : 'light'],
 });
+
+/** The organization's own photo, or null. Logos and covers must never point at another account's media. */
+async function ownPhoto(db: Db, organizationId: string, id: string) {
+  const [row] = await db.select({ id: schema.media.id }).from(schema.media).where(and(eq(schema.media.id, id), eq(schema.media.organizationId, organizationId))).limit(1);
+  return row ? row.id : null;
+}
 
 async function orgPlan(db: Db, organizationId: string): Promise<PlanId> {
   const [org] = await db.select({ plan: schema.organizations.plan }).from(schema.organizations).where(eq(schema.organizations.id, organizationId)).limit(1);
@@ -97,7 +104,9 @@ const Assistant = z.object({
         z.object({
           role: z.literal('assistant'),
           text: z.string().max(1200),
-          options: z.array(z.object({ nameEn: z.string().max(60), nameAr: z.string().max(60), noteEn: z.string().max(300), noteAr: z.string().max(300), colors: z.record(z.string(), z.string()), font: z.enum(['sans', 'serif']), boldPrices: z.boolean() })).max(3),
+          options: z
+            .array(z.object({ nameEn: z.string().max(60), nameAr: z.string().max(60), noteEn: z.string().max(300), noteAr: z.string().max(300), colors: z.record(z.string(), z.string()), ...ThemeStyleInput.shape }))
+            .max(3),
         }),
       ]),
     )
@@ -175,7 +184,7 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
     if (!loc) return;
     const plan = await orgPlan(db, loc.organizationId);
     const custom = (await db.select().from(schema.customThemes).where(eq(schema.customThemes.organizationId, loc.organizationId)).orderBy(schema.customThemes.createdAt)).map(customTheme);
-    const locations = await db.select({ id: schema.locations.id }).from(schema.locations).where(eq(schema.locations.organizationId, loc.organizationId));
+    const locations = await db.select({ id: schema.locations.id, brandId: schema.locations.brandId }).from(schema.locations).where(eq(schema.locations.organizationId, loc.organizationId));
     const [brand] = await db.select().from(schema.brands).where(eq(schema.brands.id, loc.brandId)).limit(1);
     const body: ThemesOverview = {
       plan,
@@ -184,6 +193,8 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
       presets: PRESETS.map((t) => ({ ...t, allowed: themeAllowed(plan, t), contrast: checkTheme(t.colors) })),
       custom: custom.map((t) => ({ ...t, allowed: themeAllowed(plan, t), contrast: checkTheme(t.colors) })),
       brand: { nameEn: brand!.nameEn, nameAr: brand!.nameAr, taglineEn: brand!.taglineEn, taglineAr: brand!.taglineAr, logo: photoOf(brand!.logoPhotoId) },
+      cover: photoOf(loc.coverPhotoId),
+      brandBranches: locations.filter((l) => l.brandId === loc.brandId).length,
       locations: locations.length,
       canShare: can(plan, 'sharedTheme'),
       canDesign: can(plan, 'themeAssistant'),
@@ -195,8 +206,18 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
   app.put('/locations/:locationId/theme', auth, async (req, reply) => {
     const loc = await locationAccess(db, req, reply, (req.params as { locationId: string }).locationId, ['owner', 'admin']);
     if (!loc) return;
-    const body = z.object({ ref: z.string().max(60), everywhere: z.boolean().default(false) }).safeParse(req.body);
+    const body = z
+      .object({
+        ref: z.string().max(60),
+        everywhere: z.boolean().default(false),
+        // Photos the Theme assistant picked: the brand's logo (every branch) and this location's cover.
+        logoPhotoId: z.string().uuid().optional(),
+        coverPhotoId: z.string().uuid().optional(),
+      })
+      .safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid' });
+    const { logoPhotoId, coverPhotoId } = body.data;
+    for (const id of [logoPhotoId, coverPhotoId]) if (id && !(await ownPhoto(db, loc.organizationId, id))) return reply.code(400).send({ error: 'invalid', issues: ['photo'] });
     const plan = await orgPlan(db, loc.organizationId);
     const ref = body.data.ref;
     let theme: Theme | undefined = presetByRef(ref);
@@ -206,12 +227,13 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
     }
     if (!theme) return reply.code(400).send({ error: 'invalid', issues: ['ref'] });
     if (!themeAllowed(plan, theme)) return reply.code(402).send({ error: 'upgrade_required', feature: theme.tier === 'custom' ? 'themeAssistant' : 'themeGallery', plan: 'growth' });
-    if (body.data.everywhere) {
-      if (!can(plan, 'sharedTheme')) return reply.code(402).send({ error: 'upgrade_required', feature: 'sharedTheme', plan: 'multi_location' });
-      await db.update(schema.locations).set({ themeRef: ref }).where(eq(schema.locations.organizationId, loc.organizationId));
-    } else {
-      await db.update(schema.locations).set({ themeRef: ref }).where(eq(schema.locations.id, loc.id));
-    }
+    if (body.data.everywhere && !can(plan, 'sharedTheme')) return reply.code(402).send({ error: 'upgrade_required', feature: 'sharedTheme', plan: 'multi_location' });
+    await db.transaction(async (tx) => {
+      if (body.data.everywhere) await tx.update(schema.locations).set({ themeRef: ref }).where(eq(schema.locations.organizationId, loc.organizationId));
+      else await tx.update(schema.locations).set({ themeRef: ref }).where(eq(schema.locations.id, loc.id));
+      if (coverPhotoId) await tx.update(schema.locations).set({ coverPhotoId }).where(eq(schema.locations.id, loc.id));
+      if (logoPhotoId) await tx.update(schema.brands).set({ logoPhotoId }).where(eq(schema.brands.id, loc.brandId));
+    });
     return { ok: true, ref };
   });
 
@@ -225,7 +247,18 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
     const colors = fixContrast(body.data.colors);
     const [row] = await db
       .insert(schema.customThemes)
-      .values({ organizationId: m.organizationId, nameEn: body.data.nameEn, nameAr: body.data.nameAr, colors, font: body.data.font, boldPrices: body.data.boldPrices, createdBy: req.user!.id })
+      .values({
+        organizationId: m.organizationId,
+        nameEn: body.data.nameEn,
+        nameAr: body.data.nameAr,
+        colors,
+        font: body.data.font,
+        boldPrices: body.data.boldPrices,
+        corners: body.data.corners,
+        header: body.data.header,
+        layout: body.data.layout,
+        createdBy: req.user!.id,
+      })
       .returning();
     return reply.code(201).send(customTheme(row!));
   });
@@ -257,22 +290,40 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
     const [brand] = await db.select().from(schema.brands).where(eq(schema.brands.id, loc.brandId)).limit(1);
     const current = await resolveTheme(db, loc);
 
-    // Photos come from the organization's own uploads.
+    // Photos come from the organization's own uploads. They are numbered in the order they reach
+    // the model ("Photo 1" first), which is how its answer points at a logo or a cover.
     const turns = [];
+    const photos: string[] = [];
     for (const t of body.data.turns) {
       if (t.role === 'user' && t.photoId) {
-        const [owned] = await db.select({ id: schema.media.id }).from(schema.media).where(and(eq(schema.media.id, t.photoId), eq(schema.media.organizationId, m.organizationId))).limit(1);
-        const data = owned ? await store.get(t.photoId, 'full') : null;
+        const owned = await ownPhoto(db, m.organizationId, t.photoId);
+        const data = owned ? await store.get(owned, 'full') : null;
+        if (data) photos.push(owned!);
         turns.push({ ...t, photo: data ? ({ mediaType: 'image/webp', data } as AiFile) : null });
       } else turns.push(t as AssistantTurn);
     }
 
     let design;
     try {
-      design = await ai.designThemes({ brand: { nameEn: brand!.nameEn, nameAr: brand!.nameAr, taglineEn: brand!.taglineEn, current: current.colors }, locale: body.data.locale, turns });
+      design = await ai.designThemes({
+        brand: {
+          nameEn: brand!.nameEn,
+          nameAr: brand!.nameAr,
+          taglineEn: brand!.taglineEn,
+          current: current.colors,
+          style: styleOf(current),
+          hasLogo: Boolean(brand!.logoPhotoId),
+          hasCover: Boolean(loc.coverPhotoId),
+        },
+        locale: body.data.locale,
+        turns,
+      });
     } catch (e) {
       return aiFailure(reply, e);
     }
+    const photoAt = (n: number | null) => (n !== null && Number.isInteger(n) && photos[n - 1] ? photoOf(photos[n - 1]!) : null);
+    const logo = photoAt(design.logoPhoto);
+    const cover = photoAt(design.coverPhoto);
     // Whatever comes back is checked here: malformed colours are dropped and every palette is
     // nudged to AA before an owner can pick it.
     const options: AssistantOption[] = design.options
@@ -287,10 +338,13 @@ export function themeRoutes(app: FastifyInstance, db: Db, store: MediaStore, ai:
           noteEn: body.data.locale === 'en' ? o.note : '',
           noteAr: body.data.locale === 'ar' ? o.note : '',
           colors,
-          font: o.font,
-          boldPrices: o.boldPrices,
+          ...styleOf(o),
+          // A new cover only shows with the photo header.
+          ...(cover ? { header: 'photo' as const } : {}),
           contrast: checkTheme(colors),
           adjusted,
+          logo,
+          cover,
         };
       });
     if (!options.length) return reply.code(422).send({ error: 'ai_declined' });

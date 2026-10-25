@@ -117,6 +117,10 @@ Reading a menu from photos or a PDF, and the Theme assistant, go through an `AiP
 - Strict structured outputs built from zod schemas; only endpoints that honour them are used
   (`provider.require_parameters`), and every answer is validated again.
 - Photos are shrunk to 2,000 px JPEG and sent as data URLs; PDFs as `file` parts.
+- The Theme assistant designs the whole look, not only colours: heading typeface, header, corners
+  and dish layout. When the owner asks, it uses their photos (numbered "Photo 1", "Photo 2" in the
+  conversation) as the logo or header photo; those apply together with the theme
+  (`PUT /locations/:id/theme` with `logoPhotoId` / `coverPhotoId`).
 - Every theme palette is checked and nudged to WCAG AA before an owner sees it.
 - Failures map to "declined", "too long" and "busy" (rate limits, 5xx, out of credit).
 

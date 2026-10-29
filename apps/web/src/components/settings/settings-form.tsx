@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   DEFAULT_HOURS,
   directionsUrl,
@@ -20,10 +20,13 @@ import {
 } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { cx } from '@/lib/cx';
+import { useUnsavedChanges } from '@/lib/unsaved';
 import { LocationMap, type Pin } from '../map/location-map';
 import { Button } from '../ui/button';
+import { Dialog } from '../ui/dialog';
 import { Field, Select } from '../ui/field';
 import { Switch } from '../ui/switch';
+import { UnsavedBar } from '../unsaved';
 import { HoursEditor } from './hours-editor';
 import { PhotoField } from './photo-field';
 import { GuestPreview, SetupHealth } from './settings-preview';
@@ -97,6 +100,38 @@ const toPayload = (f: Form): SettingsPayload => ({
   logoPhotoId: f.logo?.id ?? null,
 });
 
+/** What changed since the last save, for the preview: short text fields show before and after;
+ *  the rest (map pin, hours, photos…) just say they changed. */
+function changedFields(saved: Form, now: Form, s: Dictionary['settings']): Array<{ label: string; from?: string; to?: string }> {
+  const a = toPayload(saved);
+  const b = toPayload(now);
+  const same = (keys: Array<keyof SettingsPayload>) => keys.every((k) => JSON.stringify(a[k]) === JSON.stringify(b[k]));
+  const text = (k: 'nameEn' | 'nameAr' | 'addressEn' | 'addressAr' | 'building' | 'city' | 'phone' | 'orderUrl' | 'reservationUrl', label: string) =>
+    same([k]) ? [] : [{ label, from: String(a[k] ?? ''), to: String(b[k] ?? '') }];
+  const flag = (keys: Array<keyof SettingsPayload>, label: string) => (same(keys) ? [] : [{ label }]);
+  return [
+    ...text('nameEn', s.nameEn),
+    ...text('nameAr', s.nameAr),
+    ...flag(['currency'], s.currency),
+    ...text('addressEn', s.street),
+    ...text('addressAr', s.addressAr),
+    ...text('building', s.building),
+    ...text('city', s.city),
+    ...flag(['lat', 'lng'], s.healthPin),
+    ...flag(['deliveryRadiusM'], s.radius),
+    ...flag(['showMap'], s.showMap),
+    ...flag(['hours'], s.hoursTitle),
+    ...flag(['closures'], s.closures),
+    ...flag(['timezone'], s.timezone),
+    ...flag(['logoPhotoId'], s.logo),
+    ...flag(['coverPhotoId'], s.cover),
+    ...text('phone', s.contact),
+    ...flag(['phoneIsWhatsapp'], s.whatsapp),
+    ...text('orderUrl', s.order),
+    ...text('reservationUrl', s.reservation),
+  ];
+}
+
 const SECTIONS = ['identity', 'map', 'hours', 'brand', 'actions'] as const;
 type Section = (typeof SECTIONS)[number];
 const JUMP: Record<SetupItem['key'], Section> = {
@@ -157,13 +192,10 @@ export function SettingsForm({
     if (state !== 'saving') setState('idle');
   };
 
-  // Leaving with unsaved edits asks first.
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [dirty]);
+  const discard = () => (setF(saved), setErrors(new Set()), setState('idle'));
+  // Leaving with unsaved edits asks first (tab close, links, location switch).
+  useUnsavedChanges(dirty && canEdit, () => save(), discard);
+  const [previewing, setPreviewing] = useState(false);
 
   const fullHealth = setupHealth({
     nameEn: f.nameEn,
@@ -198,13 +230,15 @@ export function SettingsForm({
   const linkHost = new URL(menuOrigin).host;
   const err = (key: string) => errors.has(key);
 
-  async function save() {
+  /** Resolves to whether it saved, for the leave-page prompt. */
+  async function save(): Promise<boolean> {
     const payload = toPayload(f);
     const check = SettingsInput.safeParse(payload);
     if (!check.success) {
       setErrors(new Set(check.error.issues.map((i) => String(i.path[0]))));
       setState('invalid');
-      return;
+      setPreviewing(false);
+      return false;
     }
     setState('saving');
     try {
@@ -216,17 +250,22 @@ export function SettingsForm({
       if (res.status === 400) {
         const body = (await res.json()) as { issues?: string[] };
         setErrors(new Set((body.issues ?? []).map((i) => i.split('.')[0]!)));
-        return setState('invalid');
+        setState('invalid');
+        setPreviewing(false);
+        return false;
       }
-      if (!res.ok) return setState('failed');
+      if (!res.ok) return (setState('failed'), false);
       const next = fromSettings((await res.json()) as LocationSettings);
       setSaved(next);
       setF(next);
       setErrors(new Set());
       setState('saved');
+      setPreviewing(false);
       router.refresh(); // names in the sidebar and switcher
+      return true;
     } catch {
       setState('failed');
+      return false;
     }
   }
 
@@ -245,6 +284,33 @@ export function SettingsForm({
       'h-10 w-full min-w-0 rounded-[10px] border bg-surface px-3 text-body-s outline-none placeholder:text-muted focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] disabled:opacity-60',
       invalid ? 'border-brand' : 'border-line-2',
     );
+
+  const guestPreview = (
+    <GuestPreview
+      t={t}
+      locale={locale}
+      d={{
+        nameEn: f.nameEn,
+        nameAr: f.nameAr,
+        brandEn: settings.brand.nameEn,
+        brandAr: settings.brand.nameAr,
+        streetEn: f.addressEn,
+        streetAr: f.addressAr,
+        hours: f.hours,
+        closures: f.closures,
+        timezone: f.timezone,
+        logo: f.logo,
+        cover: f.cover,
+        hasPin: Boolean(f.pin),
+        showMap: f.showMap,
+        radiusM: f.deliveryOn ? f.radiusM : null,
+        phone: Boolean(f.phone),
+        whatsapp: f.phoneIsWhatsapp,
+        order: Boolean(f.orderUrl),
+        book: Boolean(f.reservationUrl),
+      }}
+    />
+  );
 
   return (
     <div className="pb-24">
@@ -623,56 +689,57 @@ export function SettingsForm({
         </div>
 
         <aside className="grid gap-4 xl:sticky xl:top-16">
-          <GuestPreview
-            t={t}
-            locale={locale}
-            d={{
-              nameEn: f.nameEn,
-              nameAr: f.nameAr,
-              brandEn: settings.brand.nameEn,
-              brandAr: settings.brand.nameAr,
-              streetEn: f.addressEn,
-              streetAr: f.addressAr,
-              hours: f.hours,
-              closures: f.closures,
-              timezone: f.timezone,
-              logo: f.logo,
-              cover: f.cover,
-              hasPin: Boolean(f.pin),
-              showMap: f.showMap,
-              radiusM: f.deliveryOn ? f.radiusM : null,
-              phone: Boolean(f.phone),
-              whatsapp: f.phoneIsWhatsapp,
-              order: Boolean(f.orderUrl),
-              book: Boolean(f.reservationUrl),
-            }}
-          />
+          {guestPreview}
           <SetupHealth items={health.items} pct={health.pct} t={s} locale={locale} onJump={(k) => jump(JUMP[k])} />
         </aside>
       </fieldset>
 
-      {/* Floating save bar while there are unsaved edits. */}
-      <div
-        role="region"
-        aria-label={fill(s.unsaved, { name: f.nameEn })}
-        className={cx(
-          'fixed start-1/2 bottom-5 z-40 flex max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-3 rounded-2xl bg-[#1c1c1c] px-4 py-2.5 text-[#f5f5f5] shadow-raised transition-all rtl:translate-x-1/2',
-          dirty && canEdit ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0',
-        )}
+      <UnsavedBar dirty={dirty && canEdit} saving={state === 'saving'} t={t.unsaved} onPreview={() => setPreviewing(true)} onSave={save} onDiscard={discard} />
+      <Dialog
+        open={previewing}
+        onClose={() => setPreviewing(false)}
+        title={t.unsaved.previewTitle}
+        description={t.unsaved.previewBody}
+        closeLabel={t.unsaved.close}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPreviewing(false)}>
+              {t.unsaved.keepEditing}
+            </Button>
+            <Button onClick={save} disabled={state === 'saving'}>
+              {state === 'saving' ? s.saving : s.save}
+            </Button>
+          </>
+        }
       >
-        <span aria-hidden className="size-2 shrink-0 rounded-full bg-gold" />
-        <span className="truncate text-body-s font-medium">{fill(s.unsaved, { name: f.nameEn || saved.nameEn })}</span>
-        <button
-          type="button"
-          onClick={() => (setF(saved), setErrors(new Set()), setState('idle'))}
-          className="shrink-0 rounded-lg px-3 py-1.5 text-body-s font-semibold text-[#bdbdbd] hover:text-white"
-        >
-          {s.discard}
-        </button>
-        <button type="button" onClick={save} disabled={state === 'saving'} className="shrink-0 rounded-lg bg-brand-fill px-3.5 py-1.5 text-body-s font-semibold text-white">
-          {state === 'saving' ? s.saving : s.save}
-        </button>
-      </div>
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
+          <section aria-labelledby="settings-changes-h">
+            <h3 id="settings-changes-h" className="text-title-s font-semibold">
+              {t.unsaved.changes}
+            </h3>
+            <ul className="mt-3 grid gap-1.5 text-body-s">
+              {changedFields(saved, f, s).map((c) => (
+                <li key={c.label} className="rounded-lg bg-surface-2 px-3 py-2">
+                  <span className="font-semibold">{c.label}</span>
+                  {c.from !== undefined && (
+                    <span className="mt-0.5 block text-caption text-muted">
+                      <span dir="auto" className="line-through">
+                        {c.from || '—'}
+                      </span>{' '}
+                      <span aria-hidden>{locale === 'ar' ? '←' : '→'}</span>{' '}
+                      <span dir="auto" className="text-ink">
+                        {c.to || '—'}
+                      </span>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section aria-label={s.guestView}>{guestPreview}</section>
+        </div>
+      </Dialog>
       <p role="status" aria-live="polite" className="sr-only">
         {state === 'saved' ? s.saved : ''}
       </p>

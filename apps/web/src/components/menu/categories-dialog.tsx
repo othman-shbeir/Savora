@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { fill, type Locale, type MenuCategory } from '@savora/shared';
-import { send } from '@/lib/client-api';
 import { cx } from '@/lib/cx';
 import { primaryName } from '@/lib/menu-text';
 import { plural } from '@/lib/plural';
@@ -14,34 +13,30 @@ const input =
   'h-10 w-full min-w-0 rounded-[10px] border border-line-2 bg-surface px-3 text-body-s outline-none placeholder:text-muted focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]';
 const iconButton = 'grid size-9 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-30';
 
-/** Rename, reorder, add and delete categories. Each row saves on its own. */
+/** Rename, reorder, add and delete categories. Changes go to the editor's unsaved copy; the page's
+ *  Save sends them with everything else. */
 export function CategoriesDialog({
   open,
   categories,
   t,
   locale,
-  locationId,
   onClose,
-  onChanged,
+  onRename,
+  onMove,
+  onDelete,
+  onAdd,
 }: {
   open: boolean;
   categories: MenuCategory[];
   t: EditorText;
   locale: Locale;
-  locationId: string;
   onClose: () => void;
-  onChanged: () => void;
+  onRename: (id: string, names: Names) => void;
+  onMove: (id: string, direction: 'up' | 'down') => void;
+  onDelete: (id: string) => void;
+  onAdd: (names: Names) => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
-
-  const run = async (method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown) => {
-    setError(null);
-    const res = await send(method, path, body);
-    if (!res.ok) setError(t.failed);
-    else onChanged();
-    return res.ok;
-  };
 
   return (
     <Dialog open={open} onClose={onClose} title={t.categoriesTitle} description={t.categoriesBody} closeLabel={t.close} size="lg">
@@ -60,21 +55,17 @@ export function CategoriesDialog({
             t={t}
             locale={locale}
             confirming={confirming === c.id}
-            onSave={(names) => run('PATCH', `/categories/${c.id}`, names)}
-            onMove={(direction) => run('POST', `/categories/${c.id}/move`, { direction })}
+            onSave={async (names) => (onRename(c.id, names), true)}
+            onMove={async (direction) => (onMove(c.id, direction), true)}
             onAskDelete={() => setConfirming(c.id)}
             onCancelDelete={() => setConfirming(null)}
             onDelete={async () => {
-              if (await run('DELETE', `/categories/${c.id}`)) setConfirming(null);
+              onDelete(c.id);
+              setConfirming(null);
             }}
           />
         ))}
-        <NewCategory t={t} onAdd={(names) => run('POST', `/locations/${locationId}/categories`, names)} />
-        {error && (
-          <p role="alert" className="rounded-xl bg-brand-soft px-4 py-3 text-body-s text-brand">
-            {error}
-          </p>
-        )}
+        <NewCategory t={t} onAdd={async (names) => (onAdd(names), true)} />
       </div>
     </Dialog>
   );

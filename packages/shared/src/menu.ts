@@ -90,6 +90,77 @@ export const ImportInput = z.object({
 });
 export type ImportPayload = z.infer<typeof ImportInput>;
 
+/** The whole draft menu as the editor holds it, saved in one go: categories and their items in
+ *  display order. Rows with an `id` of this location are updated, rows without one are added, and
+ *  rows left out are deleted. */
+export const MenuSaveInput = z.object({
+  categories: z
+    .array(
+      z
+        .object({
+          id: z.string().uuid().nullish(),
+          nameEn: name,
+          nameAr: name,
+          items: z
+            .array(
+              z
+                .object({
+                  id: z.string().uuid().nullish(),
+                  nameEn: name,
+                  nameAr: name,
+                  descriptionEn: description,
+                  descriptionAr: description,
+                  priceMinor,
+                  available: z.boolean(),
+                  photoId: z.string().uuid().nullish().transform((v) => v ?? null),
+                })
+                .refine(hasAName, bothNamesNeeded),
+            )
+            .max(300),
+        })
+        .refine(hasAName, bothNamesNeeded),
+    )
+    .max(60),
+});
+export type MenuSavePayload = z.infer<typeof MenuSaveInput>;
+
+/** Ids the editor gives rows it has added but not saved yet. They are never sent to the API. */
+export const isUnsavedId = (id: string) => id.startsWith('new:');
+
+/** The editor's categories as the API's save payload. */
+export function menuSavePayload(categories: MenuCategory[]): MenuSavePayload {
+  const id = (x: { id: string }) => (isUnsavedId(x.id) ? null : x.id);
+  return {
+    categories: categories.map((c) => ({
+      id: id(c),
+      nameEn: c.nameEn,
+      nameAr: c.nameAr,
+      items: c.items.map((i) => ({ id: id(i), nameEn: i.nameEn, nameAr: i.nameAr, descriptionEn: i.descriptionEn, descriptionAr: i.descriptionAr, priceMinor: i.priceMinor, available: i.available, photoId: i.photo?.id ?? null })),
+    })),
+  };
+}
+
+const importKey = (x: { nameEn: string | null; nameAr: string | null }) => (x.nameEn ?? '').toLowerCase().trim() || (x.nameAr ?? '').trim();
+
+/** Adds reviewed imports to the editor's copy the way the API's import does: items join an
+ *  existing category with the same name instead of creating a duplicate. `newId` makes unsaved ids. */
+export function mergeImport(categories: MenuCategory[], payload: ImportPayload, newId: () => string): { categories: MenuCategory[]; items: number } {
+  const next = categories.map((c) => ({ ...c, items: [...c.items] }));
+  let items = 0;
+  for (const c of payload.categories) {
+    let cat = next.find((e) => importKey(e) === importKey(c));
+    if (!cat) {
+      cat = { id: newId(), nameEn: c.nameEn, nameAr: c.nameAr, items: [] };
+      next.push(cat);
+    }
+    for (const i of c.items) {
+      cat.items.push({ id: newId(), categoryId: cat.id, nameEn: i.nameEn, nameAr: i.nameAr, descriptionEn: i.descriptionEn, descriptionAr: i.descriptionAr, priceMinor: i.priceMinor, available: true, photo: null });
+      items++;
+    }
+  }
+  return { categories: next, items };
+}
+
 // ---------- Prices ----------
 
 const ARABIC_DIGITS = /[٠-٩۰-۹]/g;

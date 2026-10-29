@@ -9,13 +9,28 @@ import { Button } from '../ui/button';
 import { Card, Overline } from '../ui/card';
 import type { EditorText } from './menu-editor';
 
-/** Draft → guest view, with the release note and the one button that changes what guests see. */
-export function PublishCard({ draft, t, locale, onPublished, onError }: { draft: MenuDraft; t: EditorText; locale: Locale; onPublished: (version: number) => void; onError: (text: string) => void }) {
+/** Draft → guest view, with the release note and the one button that changes what guests see.
+ *  `unsaved` holds publishing back, so guests never get edits the owner hasn't saved. */
+export function PublishCard({
+  draft,
+  unsaved,
+  t,
+  locale,
+  onPublished,
+  onError,
+}: {
+  draft: MenuDraft;
+  unsaved?: boolean;
+  t: EditorText;
+  locale: Locale;
+  onPublished: (version: number) => void;
+  onError: (text: string) => void;
+}) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const ready = draft.categories.reduce((n, c) => n + c.items.filter((i) => i.available).length, 0);
   const { published, hasChanges } = draft;
-  const canPublish = hasChanges && ready > 0 && !busy;
+  const canPublish = hasChanges && ready > 0 && !busy && !unsaved;
 
   async function publish() {
     setBusy(true);
@@ -96,7 +111,7 @@ export function PublishCard({ draft, t, locale, onPublished, onError }: { draft:
           {busy ? t.publishing : !hasChanges ? t.upToDate : published ? t.publish : t.publishFirst}
         </Button>
       </form>
-      {hasChanges && ready === 0 && <p className="mt-2 text-caption text-brand">{t.emptyMenu}</p>}
+      {unsaved ? <p className="mt-2 text-caption text-gold-ink">{t.saveBeforePublish}</p> : hasChanges && ready === 0 && <p className="mt-2 text-caption text-brand">{t.emptyMenu}</p>}
     </Card>
   );
 }

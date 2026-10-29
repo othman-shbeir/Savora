@@ -163,3 +163,37 @@ export const SpotInput = z
   .refine((s) => s.kind !== 'scene' || s.targetSceneId, { message: 'scene_required', path: ['targetSceneId'] })
   .refine((s) => s.kind !== 'info' || s.labelEn || s.labelAr, { message: 'label_required', path: ['labelEn'] });
 export type SpotPayload = z.input<typeof SpotInput>;
+
+/** The studio's Save: every scene in walking order, with its name, time and spots. Scenes only come
+ *  from uploads, so each one has an id; scenes left out are deleted. Spots without an id are added,
+ *  and spots left out are deleted. */
+export const TourSaveInput = z.object({
+  scenes: z
+    .array(
+      z.intersection(
+        SceneInput,
+        z.object({
+          id: z.string().uuid(),
+          spots: z.array(z.intersection(z.object({ id: z.string().uuid().nullish().transform((v) => v ?? null) }), SpotInput)).max(MAX_SPOTS),
+        }),
+      ),
+    )
+    .max(MAX_SCENES),
+});
+export type TourSavePayload = z.input<typeof TourSaveInput>;
+
+/** Ids the studio gives spots it has added but not saved yet. They are never sent to the API. */
+export const isUnsavedSpot = (id: string) => id.startsWith('new:');
+
+/** The studio's scenes as the API's save payload. */
+export function tourSavePayload(scenes: TourScene[]): TourSavePayload {
+  return {
+    scenes: scenes.map((s) => ({
+      id: s.id,
+      nameEn: s.nameEn,
+      nameAr: s.nameAr,
+      seconds: s.seconds,
+      spots: s.spots.map(({ id, ...spot }) => ({ ...spot, id: isUnsavedSpot(id) ? null : id })),
+    })),
+  };
+}

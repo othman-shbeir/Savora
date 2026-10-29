@@ -1,8 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { parsePrice, priceInput, type Locale, type MenuDraft, type MenuItem, type Photo } from '@savora/shared';
-import { send } from '@/lib/client-api';
+import { parsePrice, priceInput, type Locale, type MenuCategory, type MenuDraft, type MenuItem, type Photo } from '@savora/shared';
 import { primaryName } from '@/lib/menu-text';
 import { Button } from '../ui/button';
 import { Dialog } from '../ui/dialog';
@@ -17,8 +16,28 @@ const MAX_BYTES = 8 * 1024 * 1024;
 
 type Errors = Partial<Record<'name' | 'price' | 'category' | 'photo' | 'form', string>>;
 
-/** Add or edit one dish. The dialog body remounts per item, so each opening starts from that item. */
-export function ItemDialog(props: { open: boolean; item: MenuItem | null; defaultCategoryId?: string; draft: MenuDraft; t: EditorText; locale: Locale; onClose: () => void; onSaved: () => void }) {
+/** The dish as the dialog hands it back. A new category, if one was typed, comes with it; the
+ *  editor adds both to its unsaved copy. Ids of new rows are left to the editor. */
+export type ItemResult = {
+  item: Omit<MenuItem, 'id' | 'categoryId'> & { id: string | null; categoryId: string | null };
+  newCategory: { nameEn: string | null; nameAr: string | null } | null;
+};
+
+type ItemProps = {
+  open: boolean;
+  item: MenuItem | null;
+  defaultCategoryId?: string;
+  categories: MenuCategory[];
+  location: MenuDraft['location'];
+  t: EditorText;
+  locale: Locale;
+  onClose: () => void;
+  onSave: (result: ItemResult) => void;
+};
+
+/** Add or edit one dish. The dialog body remounts per item, so each opening starts from that item.
+ *  Nothing is saved here: the editor holds the change until the owner saves the page. */
+export function ItemDialog(props: ItemProps) {
   const { open, item, t, onClose } = props;
   return (
     <Dialog open={open} onClose={onClose} title={item ? t.editTitle : t.addTitle} closeLabel={t.close} size="lg">
@@ -27,13 +46,11 @@ export function ItemDialog(props: { open: boolean; item: MenuItem | null; defaul
   );
 }
 
-function ItemForm({ item, defaultCategoryId, draft, t, locale, onClose, onSaved }: { item: MenuItem | null; defaultCategoryId?: string; draft: MenuDraft; t: EditorText; locale: Locale; onClose: () => void; onSaved: () => void }) {
-  const { categories, location } = draft;
+function ItemForm({ item, defaultCategoryId, categories, location, t, locale, onClose, onSave }: Omit<ItemProps, 'open'>) {
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? defaultCategoryId ?? categories[0]?.id ?? NEW);
   const [available, setAvailable] = useState(item?.available ?? true);
   const [photo, setPhoto] = useState<Photo | null>(item?.photo ?? null);
   const [uploading, setUploading] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const fileRef = useRef<HTMLInputElement>(null);
   const currencySymbol = new Intl.NumberFormat('en', { style: 'currency', currency: location.currency, currencyDisplay: 'narrowSymbol' }).formatToParts(0).find((p) => p.type === 'currency')?.value;
@@ -54,7 +71,7 @@ function ItemForm({ item, defaultCategoryId, draft, t, locale, onClose, onSaved 
     setUploading(false);
   }
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
+  function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const text = (k: string) => String(f.get(k) ?? '').trim() || null;
@@ -73,23 +90,11 @@ function ItemForm({ item, defaultCategoryId, draft, t, locale, onClose, onSaved 
       return;
     }
 
-    setBusy(true);
-    let target = categoryId;
-    if (categoryId === NEW) {
+    onSave({
+      item: { ...values, priceMinor: priceMinor!, available, photo, id: item?.id ?? null, categoryId: categoryId === NEW ? null : categoryId },
       // A new category is named in the language the owner is working in.
-      const created = await send<{ id: string }>('POST', `/locations/${location.id}/categories`, locale === 'ar' ? { nameAr: newCategory } : { nameEn: newCategory });
-      if (!created.ok || !created.data) {
-        setBusy(false);
-        return setErrors({ form: t.failed });
-      }
-      target = created.data.id;
-      setCategoryId(target);
-    }
-    const payload = { ...values, priceMinor, available, categoryId: target, photoId: photo?.id ?? null };
-    const res = item ? await send('PATCH', `/items/${item.id}`, payload) : await send('POST', `/locations/${location.id}/items`, payload);
-    setBusy(false);
-    if (!res.ok) return setErrors({ form: t.failed });
-    onSaved();
+      newCategory: categoryId === NEW ? (locale === 'ar' ? { nameEn: null, nameAr: newCategory } : { nameEn: newCategory, nameAr: null }) : null,
+    });
   }
 
   return (
@@ -207,8 +212,8 @@ function ItemForm({ item, defaultCategoryId, draft, t, locale, onClose, onSaved 
         <Button type="button" variant="secondary" onClick={onClose}>
           {t.cancel}
         </Button>
-        <Button type="submit" disabled={busy || uploading}>
-          {busy ? t.saving : t.save}
+        <Button type="submit" disabled={uploading}>
+          {t.done}
         </Button>
       </div>
     </form>

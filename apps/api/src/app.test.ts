@@ -186,7 +186,7 @@ const setPlan = (orgId: string, plan: 'starter' | 'growth' | 'multi_location') =
 async function ownerWithLocation(email: string) {
   const { cookie } = await signIn(email);
   const created = (await app.inject({ method: 'POST', url: '/organizations', headers: { cookie }, payload: { businessName: 'Menu Café', locationName: 'Main' } })).json();
-  const call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object) => app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
+  const call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) => app.inject({ method, url, headers: { cookie }, ...(payload ? { payload } : {}) });
   const menu = async () => (await call('GET', `/locations/${created.locationId}/menu`)).json();
   return { cookie, call, menu, orgId: created.organizationId as string, locationId: created.locationId as string };
 }
@@ -287,6 +287,52 @@ describe('menu', () => {
       ['Coffee', 1],
       ['Bites', 1],
     ]);
+  });
+
+  it('saves the whole draft at once: adds, updates, reorders, moves and deletes', async () => {
+    const o = await ownerWithLocation('menu-save@cafe.test');
+    const coffee = (await o.call('POST', `/locations/${o.locationId}/categories`, { nameEn: 'Coffee' })).json().id;
+    const cold = (await o.call('POST', `/locations/${o.locationId}/categories`, { nameEn: 'Cold' })).json().id;
+    const add = async (categoryId: string, nameEn: string) => (await o.call('POST', `/locations/${o.locationId}/items`, { categoryId, nameEn, priceMinor: 1000 })).json().id as string;
+    const latte = await add(coffee, 'Latte');
+    const mocha = await add(coffee, 'Mocha');
+    const iced = await add(cold, 'Iced tea');
+    const blank = { nameAr: null, descriptionEn: null, descriptionAr: null, photoId: null };
+
+    // Cold goes away, but its iced tea moves to Coffee first; Mocha is deleted; a new Bites category arrives.
+    const res = await o.call('PUT', `/locations/${o.locationId}/menu`, {
+      categories: [
+        { id: null, nameEn: 'Bites', nameAr: 'لقيمات', items: [{ ...blank, id: null, nameEn: 'Toast', priceMinor: 2500, available: true }] },
+        {
+          id: coffee,
+          nameEn: 'Hot drinks',
+          nameAr: null,
+          items: [
+            { ...blank, id: iced, nameEn: 'Iced tea', priceMinor: 1200, available: false },
+            { ...blank, id: latte, nameEn: 'Latte', priceMinor: 1800, available: true },
+          ],
+        },
+      ],
+    });
+    expect(res.statusCode).toBe(200);
+    const m = res.json();
+    type Saved = { id: string; nameEn: string; items: Array<{ id: string; nameEn: string; priceMinor: number; available: boolean }> };
+    expect((m.categories as Saved[]).map((c) => [c.nameEn, c.items.map((i) => [i.nameEn, i.priceMinor, i.available])])).toEqual([
+      ['Bites', [['Toast', 2500, true]]],
+      ['Hot drinks', [['Iced tea', 1200, false], ['Latte', 1800, true]]],
+    ]);
+    expect(m.categories[1].id).toBe(coffee);
+    expect(m.categories[1].items[0].id).toBe(iced);
+    expect(m.categories.find((c: { id: string }) => c.id === cold)).toBeUndefined();
+    expect(m.categories.flatMap((c: { items: Array<{ id: string }> }) => c.items.map((i) => i.id))).not.toContain(mocha);
+
+    // Rows from another location are refused, and nothing changes.
+    const other = await ownerWithLocation('menu-save-other@cafe.test');
+    const theirs = (await other.call('POST', `/locations/${other.locationId}/categories`, { nameEn: 'Theirs' })).json().id;
+    const refused = await o.call('PUT', `/locations/${o.locationId}/menu`, { categories: [{ id: theirs, nameEn: 'Mine now', nameAr: null, items: [] }] });
+    expect(refused.statusCode).toBe(409);
+    expect((await o.menu()).categories).toHaveLength(2);
+    expect((await other.call('PUT', `/locations/${o.locationId}/menu`, { categories: [] })).statusCode).toBe(404);
   });
 
   it('publishes numbered versions only when something changed for guests', async () => {
@@ -1111,6 +1157,52 @@ describe('virtual trial', { timeout: 30_000 }, () => {
     const after = (await o.call('DELETE', `/tour/scenes/${b.id}`)).json();
     expect(after.scenes).toHaveLength(2);
     expect(after.scenes[0].spots.map((s: { kind: string }) => s.kind)).toEqual(['info']);
+  });
+
+  it('saves names, times, order and spots of every scene at once', async () => {
+    const { o, dish, res } = await cafeWithTour('tour-save@cafe.test');
+    const [a, b, c] = res.json().scenes;
+    const old = (await o.call('POST', `/tour/scenes/${a.id}/spots`, { x: 0.1, y: 0.1, kind: 'info', labelEn: 'Old note' })).json().scenes[0].spots[0];
+    const blank = { labelAr: null, noteEn: null, noteAr: null, itemId: null, targetSceneId: null };
+
+    // The lamps scene goes; the window moves first; the old note is edited; two spots are added.
+    const saved = await o.call('PUT', `/locations/${o.locationId}/tour`, {
+      scenes: [
+        { id: b.id, nameEn: 'Window', nameAr: 'النافذة', seconds: 10, spots: [{ ...blank, id: null, x: 0.5, y: 0.5, kind: 'dish', itemId: dish.id, labelEn: null }] },
+        {
+          id: a.id,
+          nameEn: 'Entrance',
+          nameAr: null,
+          seconds: 6,
+          spots: [
+            { ...blank, id: old.id, x: 0.2, y: 0.3, kind: 'info', labelEn: 'New note' },
+            { ...blank, id: null, x: 0.8, y: 0.4, kind: 'scene', targetSceneId: b.id, labelEn: 'To the window' },
+          ],
+        },
+      ],
+    });
+    expect(saved.statusCode).toBe(200);
+    type Scene = { id: string; nameEn: string; seconds: number; spots: Array<{ id: string; kind: string; labelEn: string | null; x: number }> };
+    const scenes = saved.json().scenes as Scene[];
+    expect(scenes.map((s) => [s.id, s.nameEn, s.seconds])).toEqual([
+      [b.id, 'Window', 10],
+      [a.id, 'Entrance', 6],
+    ]);
+    expect(scenes[1]!.spots.map((s) => [s.kind, s.labelEn])).toEqual([
+      ['info', 'New note'],
+      ['scene', 'To the window'],
+    ]);
+    expect(scenes[1]!.spots[0]).toMatchObject({ id: old.id, x: 0.2 });
+    expect(scenes.some((s) => s.id === c.id)).toBe(false);
+
+    // A spot leading to a scene that is going away, or another place's scene, is refused.
+    const bad = (target: string) => o.call('PUT', `/locations/${o.locationId}/tour`, { scenes: [{ id: b.id, nameEn: null, nameAr: null, seconds: 8, spots: [{ ...blank, id: null, x: 0.5, y: 0.5, kind: 'scene', targetSceneId: target }] }] });
+    expect((await bad(a.id)).statusCode).toBe(400);
+    expect((await bad(b.id)).statusCode).toBe(400);
+    const other = await cafeWithTour('tour-save-other@cafe.test');
+    const theirs = other.res.json().scenes[0];
+    expect((await o.call('PUT', `/locations/${o.locationId}/tour`, { scenes: [{ id: theirs.id, nameEn: 'Mine', nameAr: null, seconds: 8, spots: [] }] })).statusCode).toBe(409);
+    expect((await o.call('GET', `/locations/${o.locationId}/tour`)).json().scenes).toHaveLength(2);
   });
 
   it('publishes to guests with live dish prices, and only on Growth', async () => {

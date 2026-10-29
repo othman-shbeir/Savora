@@ -1,6 +1,6 @@
 import { schema, type Db } from '@savora/db';
-import { CategoryInput, ImportInput, ItemInput, menuHealth, photoOf, sameSnapshot, snapshotOf, type MenuCategory, type MenuDraft } from '@savora/shared';
-import { and, asc, desc, eq, gt, lt, max, sql } from 'drizzle-orm';
+import { CategoryInput, ImportInput, ItemInput, MenuSaveInput, menuHealth, photoOf, sameSnapshot, snapshotOf, type MenuCategory, type MenuDraft } from '@savora/shared';
+import { and, asc, desc, eq, gt, inArray, lt, max, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireUser } from '../auth/session';
@@ -219,6 +219,54 @@ export function menuRoutes(app: FastifyInstance, db: Db, store: MediaStore) {
       return items;
     });
     return reply.code(201).send({ items: added });
+  });
+
+  // The editor's Save: the whole draft in display order, applied in one transaction so a save never
+  // lands half-way. Rows with an id of this location are updated, rows without one are added, and
+  // rows left out are deleted. Ids from anywhere else are refused rather than silently re-created.
+  app.put('/locations/:locationId/menu', auth, async (req, reply) => {
+    const loc = await locationAccess(db, req, reply, (req.params as { locationId: string }).locationId);
+    if (!loc) return;
+    const body = MenuSaveInput.safeParse(req.body);
+    if (!body.success) return invalid(reply, body.error);
+    const cats = schema.menuCategories;
+    const items = schema.menuItems;
+
+    const photoIds = [...new Set(body.data.categories.flatMap((c) => c.items.map((i) => i.photoId)).filter((p): p is string => Boolean(p)))];
+    if (photoIds.length) {
+      const owned = await db.select({ id: schema.media.id }).from(schema.media).where(and(inArray(schema.media.id, photoIds), eq(schema.media.organizationId, loc.organizationId)));
+      if (owned.length !== photoIds.length) return reply.code(400).send({ error: 'invalid', issues: ['photoId'] });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const haveCats = new Set((await tx.select({ id: cats.id }).from(cats).where(eq(cats.locationId, loc.id))).map((r) => r.id));
+      const haveItems = new Set((await tx.select({ id: items.id }).from(items).where(eq(items.locationId, loc.id))).map((r) => r.id));
+      const foreign = body.data.categories.some((c) => (c.id && !haveCats.has(c.id)) || c.items.some((i) => i.id && !haveItems.has(i.id)));
+      if (foreign) return { error: 'stale' as const };
+
+      const keepCats = new Set<string>();
+      const keepItems = new Set<string>();
+      for (const [ci, c] of body.data.categories.entries()) {
+        let catId = c.id;
+        if (catId) await tx.update(cats).set({ nameEn: c.nameEn, nameAr: c.nameAr, position: ci }).where(eq(cats.id, catId));
+        else catId = (await tx.insert(cats).values({ locationId: loc.id, nameEn: c.nameEn, nameAr: c.nameAr, position: ci }).returning({ id: cats.id }))[0]!.id;
+        keepCats.add(catId);
+        for (const [ii, { id, ...fields }] of c.items.entries()) {
+          const row = { ...fields, categoryId: catId, position: ii };
+          if (id) await tx.update(items).set({ ...row, updatedAt: new Date() }).where(eq(items.id, id));
+          const kept = id ?? (await tx.insert(items).values({ ...row, locationId: loc.id }).returning({ id: items.id }))[0]!.id;
+          keepItems.add(kept);
+        }
+      }
+      // Items first: one moved out of a category that is going away must not go with it.
+      const dropItems = [...haveItems].filter((id) => !keepItems.has(id));
+      const dropCats = [...haveCats].filter((id) => !keepCats.has(id));
+      if (dropItems.length) await tx.delete(items).where(inArray(items.id, dropItems));
+      if (dropCats.length) await tx.delete(cats).where(inArray(cats.id, dropCats));
+      return { ok: true as const };
+    });
+    if ('error' in result) return reply.code(409).send(result);
+    return loadDraft(db, loc);
   });
 
   // ---------- Publishing ----------

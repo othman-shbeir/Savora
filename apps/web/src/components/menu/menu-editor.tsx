@@ -2,19 +2,22 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { startTransition, useOptimistic, useRef, useState, useTransition } from 'react';
-import { fill, formatPrice, parsePastedMenu, type ImportPayload, type Locale, type MenuDraft, type MenuItem } from '@savora/shared';
+import { useRef, useState } from 'react';
+import { fill, formatPrice, mergeImport, menuHealth, menuSavePayload, parsePastedMenu, type ImportPayload, type Locale, type MenuCategory, type MenuDraft, type MenuItem } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
-import { send } from '@/lib/client-api';
 import { cx } from '@/lib/cx';
+import { useUnsavedChanges } from '@/lib/unsaved';
 import { primaryName, secondaryName } from '@/lib/menu-text';
 import { plural } from '@/lib/plural';
 import { Button } from '../ui/button';
 import { Card, Overline } from '../ui/card';
+import { Dialog } from '../ui/dialog';
+import { UnsavedBar, type UnsavedText } from '../unsaved';
 import { CategoriesDialog } from './categories-dialog';
 import { HealthCard } from './health-card';
-import { ConfirmDialog, ItemDialog } from './item-dialog';
+import { ConfirmDialog, ItemDialog, type ItemResult } from './item-dialog';
 import { ItemRow } from './item-row';
+import { describeChanges, GuestPreview } from './menu-preview';
 import { PasteReviewDialog } from './paste-review-dialog';
 import { PublishCard } from './publish-card';
 
@@ -27,46 +30,32 @@ type Open =
   | { kind: 'categories' }
   | { kind: 'review'; parsed: ImportPayload; notes?: string[] };
 
-/** Changes the list shows the moment they are made, before the API has answered. */
-type Edit = { kind: 'available'; id: string; on: boolean } | { kind: 'move'; id: string; direction: 'up' | 'down' } | { kind: 'delete'; id: string };
+const newId = () => `new:${crypto.randomUUID()}`;
+const sameMenu = (a: MenuCategory[], b: MenuCategory[]) => JSON.stringify(menuSavePayload(a)) === JSON.stringify(menuSavePayload(b));
+/** Copies deep enough to edit lists in place. */
+const copy = (cats: MenuCategory[]) => cats.map((c) => ({ ...c, items: [...c.items] }));
 
-function applyEdit(draft: MenuDraft, e: Edit): MenuDraft {
-  const categories = draft.categories.map((c) => {
-    const i = c.items.findIndex((item) => item.id === e.id);
-    if (i < 0) return c;
-    const items = [...c.items];
-    if (e.kind === 'available') items[i] = { ...items[i]!, available: e.on };
-    else if (e.kind === 'delete') items.splice(i, 1);
-    else {
-      // Moves stay inside the category, as on the server (the buttons are off at its ends).
-      const j = e.direction === 'up' ? i - 1 : i + 1;
-      if (j < 0 || j >= items.length) return c;
-      [items[i], items[j]] = [items[j]!, items[i]!];
-    }
-    return { ...c, items };
-  });
-  return { ...draft, categories };
-}
-
-/** The Menu editor. Every change saves straight to the draft and the page re-reads it from the API,
- *  so what is on screen is always what is stored. Quick changes (show/hide, reorder, delete) appear
- *  at once and roll back with a notice if the save fails. */
+/** The Menu editor. Changes stay in this page's copy of the draft until the owner saves: the
+ *  floating bar offers a preview first, then Save (one call that stores the whole draft) or
+ *  Discard. Leaving the page with unsaved changes asks first. Publishing then sends the saved
+ *  draft to guests. */
 export function MenuEditor({
   draft,
   t,
+  u,
   locale,
   brand,
   reader,
 }: {
   draft: MenuDraft;
   t: EditorText;
+  u: UnsavedText;
   locale: Locale;
   brand: { name: string; tagline: string | null };
   /** Reading a menu from photos: in the plan, and switched on on the server. */
   reader: { allowed: boolean; ai: boolean };
 }) {
   const router = useRouter();
-  const [refreshing, startRefresh] = useTransition();
   const [open, setOpen] = useState<Open>({ kind: 'none' });
   const [filter, setFilter] = useState<string>('all');
   const [paste, setPaste] = useState('');
@@ -74,9 +63,21 @@ export function MenuEditor({
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const [view, show] = useOptimistic(draft, applyEdit);
-  const { location } = draft;
-  const { categories } = view;
+  // `server` is the last saved draft; `categories` is the owner's working copy of its menu.
+  const [server, setServer] = useState(draft);
+  const [categories, setCategories] = useState(draft.categories);
+  const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  // A fresh draft from the server (after publishing, say) replaces the copy only if nothing is pending.
+  const [seen, setSeen] = useState(draft);
+  if (draft !== seen) {
+    setSeen(draft);
+    if (sameMenu(categories, server.categories)) setCategories(draft.categories);
+    setServer(draft);
+  }
+  const dirty = !sameMenu(categories, server.categories);
+
+  const { location } = server;
   const items = categories.flatMap((c) => c.items);
   const shown = filter === 'all' ? categories : categories.filter((c) => c.id === filter);
   const activeFilter = shown.length ? filter : 'all';
@@ -88,20 +89,72 @@ export function MenuEditor({
     setNotice({ text, tone });
     noticeTimer.current = setTimeout(() => setNotice(null), 5000);
   };
-  const refresh = () => startRefresh(() => router.refresh());
 
-  /** Shows `e` straight away, saves it, then re-reads the draft. The optimistic view lasts until
-   *  the re-read lands (or, when the save fails, until the action ends, so it snaps back). */
-  const edit = (e: Edit, method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
-    new Promise<void>((done) =>
-      startTransition(async () => {
-        show(e);
-        const res = await send(method, path, body);
-        if (res.ok) router.refresh();
-        else say(t.failed, 'error');
-        done();
-      }),
-    );
+  // ---- Edits: each one changes only the working copy. ----
+  const edit = (fn: (cats: MenuCategory[]) => void) =>
+    setCategories((prev) => {
+      const next = copy(prev);
+      fn(next);
+      return next;
+    });
+  const findItem = (cats: MenuCategory[], id: string) => {
+    const c = cats.find((x) => x.items.some((i) => i.id === id))!;
+    return { c, i: c.items.findIndex((x) => x.id === id) };
+  };
+  const swap = <T,>(list: T[], i: number, direction: 'up' | 'down') => {
+    const j = direction === 'up' ? i - 1 : i + 1;
+    if (j >= 0 && j < list.length) [list[i], list[j]] = [list[j]!, list[i]!];
+  };
+  const toggleItem = (id: string, on: boolean) =>
+    edit((cats) => {
+      const { c, i } = findItem(cats, id);
+      c.items[i] = { ...c.items[i]!, available: on };
+    });
+  const moveItem = (id: string, direction: 'up' | 'down') =>
+    edit((cats) => {
+      const { c, i } = findItem(cats, id);
+      swap(c.items, i, direction);
+    });
+  const removeItem = (id: string) =>
+    edit((cats) => {
+      const { c, i } = findItem(cats, id);
+      c.items.splice(i, 1);
+    });
+  /** From the dish dialog. A dish that changes category goes to the end of the new one, as on the server. */
+  const putItem = ({ item, newCategory }: ItemResult) =>
+    edit((cats) => {
+      let categoryId = item.categoryId;
+      if (newCategory) {
+        categoryId = newId();
+        cats.push({ id: categoryId, ...newCategory, items: [] });
+      }
+      const next: MenuItem = { ...item, id: item.id ?? newId(), categoryId: categoryId! };
+      if (item.id) {
+        const { c, i } = findItem(cats, item.id);
+        if (c.id === categoryId) return void (c.items[i] = next);
+        c.items.splice(i, 1);
+      }
+      cats.find((c) => c.id === categoryId)!.items.push(next);
+    });
+
+  async function save(): Promise<boolean> {
+    setSaving(true);
+    const res = await fetch(`/api/locations/${location.id}/menu`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(menuSavePayload(categories)) }).catch(() => null);
+    setSaving(false);
+    if (!res?.ok) {
+      say(u.saveFailed, 'error');
+      return false;
+    }
+    const next = (await res.json()) as MenuDraft;
+    setServer(next);
+    setCategories(next.categories);
+    setPreviewing(false);
+    say(u.saved);
+    router.refresh();
+    return true;
+  }
+  const discard = () => setCategories(server.categories);
+  useUnsavedChanges(dirty, save, discard);
 
   function organize() {
     const parsed = parsePastedMenu(paste, { nameEn: 'Menu', nameAr: 'القائمة' });
@@ -141,7 +194,7 @@ export function MenuEditor({
   const firstItem = first?.items[0];
 
   return (
-    <div className={cx('transition-opacity', refreshing && 'opacity-90')}>
+    <div>
       {/* Studio: three ways in, and a first look at the guest menu. Always dark, as in the design. */}
       <section className="mt-7 grid overflow-hidden rounded-[20px] border border-line bg-[#1f1f1f] text-[#f1f1f1] lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
         <div className="p-6 sm:p-9">
@@ -260,17 +313,18 @@ export function MenuEditor({
 
       <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
         <PublishCard
-          draft={draft}
+          draft={server}
+          unsaved={dirty}
           t={t}
           locale={locale}
           onPublished={(version) => {
             say(fill(t.published, { n: version }));
-            refresh();
+            router.refresh();
           }}
           onError={(text) => say(text, 'error')}
         />
         <HealthCard
-          checks={draft.health}
+          checks={menuHealth(categories)}
           categories={categories}
           currency={location.currency}
           t={t}
@@ -336,8 +390,8 @@ export function MenuEditor({
                 last={last}
                 t={t}
                 locale={locale}
-                onToggle={(on) => edit({ kind: 'available', id: item.id, on }, 'PATCH', `/items/${item.id}`, { available: on })}
-                onMove={(direction) => edit({ kind: 'move', id: item.id, direction }, 'POST', `/items/${item.id}/move`, { direction })}
+                onToggle={async (on) => toggleItem(item.id, on)}
+                onMove={async (direction) => moveItem(item.id, direction)}
                 onEdit={() => setOpen({ kind: 'item', item })}
                 onDelete={() => setOpen({ kind: 'delete', item })}
               />
@@ -350,13 +404,14 @@ export function MenuEditor({
         open={open.kind === 'item'}
         item={open.kind === 'item' ? open.item : null}
         defaultCategoryId={open.kind === 'item' ? open.categoryId : undefined}
-        draft={draft}
+        categories={categories}
+        location={location}
         t={t}
         locale={locale}
         onClose={() => setOpen({ kind: 'none' })}
-        onSaved={() => {
+        onSave={(result) => {
+          putItem(result);
           setOpen({ kind: 'none' });
-          refresh();
         }}
       />
       <ConfirmDialog
@@ -368,12 +423,26 @@ export function MenuEditor({
         onClose={() => setOpen({ kind: 'none' })}
         onConfirm={async () => {
           if (open.kind !== 'delete') return;
-          const id = open.item.id;
+          removeItem(open.item.id);
           setOpen({ kind: 'none' });
-          await edit({ kind: 'delete', id }, 'DELETE', `/items/${id}`);
         }}
       />
-      <CategoriesDialog open={open.kind === 'categories'} categories={categories} t={t} locale={locale} locationId={location.id} onClose={() => setOpen({ kind: 'none' })} onChanged={refresh} />
+      <CategoriesDialog
+        open={open.kind === 'categories'}
+        categories={categories}
+        t={t}
+        locale={locale}
+        onClose={() => setOpen({ kind: 'none' })}
+        onRename={(id, names) =>
+          edit((cats) => {
+            const i = cats.findIndex((c) => c.id === id);
+            cats[i] = { ...cats[i]!, ...names };
+          })
+        }
+        onMove={(id, direction) => edit((cats) => swap(cats, cats.findIndex((c) => c.id === id), direction))}
+        onDelete={(id) => edit((cats) => void cats.splice(cats.findIndex((c) => c.id === id), 1))}
+        onAdd={(names) => edit((cats) => void cats.push({ id: newId(), ...names, items: [] }))}
+      />
       <PasteReviewDialog
         open={open.kind === 'review'}
         parsed={open.kind === 'review' ? open.parsed : { categories: [] }}
@@ -383,12 +452,11 @@ export function MenuEditor({
         locale={locale}
         onClose={() => setOpen({ kind: 'none' })}
         onConfirm={async (parsed) => {
-          const res = await send<{ items: number }>('POST', `/locations/${location.id}/import`, parsed);
-          if (!res.ok) return say(t.failed, 'error');
+          const merged = mergeImport(categories, parsed, newId);
+          setCategories(merged.categories);
           setOpen({ kind: 'none' });
           setPaste('');
-          say(plural(locale, res.data?.items ?? 0, t.added));
-          refresh();
+          say(plural(locale, merged.items, t.added));
         }}
       />
 
@@ -396,13 +464,64 @@ export function MenuEditor({
         role="status"
         aria-live="polite"
         className={cx(
-          'fixed bottom-5 start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-opacity rtl:translate-x-1/2',
+          'fixed start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-[opacity,bottom] rtl:translate-x-1/2',
+          // Above the save bar while it is showing.
+          dirty ? 'bottom-32 sm:bottom-24' : 'bottom-5',
           notice ? 'opacity-100' : 'pointer-events-none opacity-0',
           notice?.tone === 'error' ? 'bg-brand-fill text-white' : 'bg-ink text-surface',
         )}
       >
         {notice?.text}
       </p>
+
+      <UnsavedBar dirty={dirty} saving={saving} t={u} onPreview={() => setPreviewing(true)} onSave={save} onDiscard={discard} />
+      <Dialog
+        open={previewing}
+        onClose={() => setPreviewing(false)}
+        title={u.previewTitle}
+        description={u.previewBody}
+        closeLabel={u.close}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPreviewing(false)}>
+              {u.keepEditing}
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? u.saving : u.save}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+          <section aria-labelledby="changes-h">
+            <h3 id="changes-h" className="text-title-s font-semibold">
+              {u.changes}
+            </h3>
+            {(() => {
+              const lines = describeChanges(server.categories, categories, t, locale);
+              return lines.length ? (
+                <ul className="mt-3 grid gap-1.5 text-body-s">
+                  {lines.map((line, i) => (
+                    <li key={i} className="flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2">
+                      <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-gold" />
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-body-s text-muted">{u.noChanges}</p>
+              );
+            })()}
+          </section>
+          <section aria-labelledby="guests-h">
+            <h3 id="guests-h" className="mb-3 text-title-s font-semibold">
+              {t.previewGuests}
+            </h3>
+            <GuestPreview categories={categories} currency={location.currency} brand={brand} t={t} locale={locale} />
+          </section>
+        </div>
+      </Dialog>
     </div>
   );
 }

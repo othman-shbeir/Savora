@@ -8,11 +8,13 @@ import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { send } from '@/lib/client-api';
 import { cx } from '@/lib/cx';
 import { planName } from '@/lib/plan-name';
+import { useUnsavedChanges } from '@/lib/unsaved';
 import { Button, ButtonLink } from '../ui/button';
 import { Card, Overline } from '../ui/card';
 import { Dialog } from '../ui/dialog';
 import { Segmented } from '../ui/segmented';
 import { Switch } from '../ui/switch';
+import { UnsavedBar } from '../unsaved';
 import { ThemeAssistant, type Draft } from './theme-assistant';
 import { Icon, ICON, MiniTheme, PhonePreview, TokenRow, type Look, type PreviewData } from './theme-preview';
 
@@ -49,7 +51,9 @@ export function ThemesScreen({
   const all = [...data.presets, ...data.custom];
   const [tab, setTab] = useState<'gallery' | 'assistant'>('gallery');
   const [filter, setFilter] = useState<Filter>('all');
-  const [selectedRef, setSelectedRef] = useState(all.some((e) => e.ref === data.selectedRef) ? data.selectedRef : data.current.ref);
+  // The theme in use; the selection starts there and Discard goes back to it.
+  const savedRef = all.some((e) => e.ref === data.selectedRef) ? data.selectedRef : data.current.ref;
+  const [selectedRef, setSelectedRef] = useState(savedRef);
   // An assistant option being previewed; saved as a custom theme when applied.
   const [draft, setDraft] = useState<Draft | null>(null);
   // The owner's photos the assistant picked as the logo or header. They stay until applied (with
@@ -60,12 +64,13 @@ export function ThemesScreen({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const [deleting, setDeleting] = useState<ThemeEntry | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const selected = all.find((e) => e.ref === selectedRef) ?? data.presets[0]!;
   const look: Look = draft ?? selected;
   const name = (x: { nameEn: string; nameAr: string | null }) => (locale === 'ar' && x.nameAr) || x.nameEn;
   const lockedCount = data.presets.filter((p) => !p.allowed).length;
-  const changed = Boolean(draft) || selectedRef !== data.selectedRef || everywhere || Boolean(assets.logo || assets.cover);
+  const changed = Boolean(draft) || selectedRef !== savedRef || everywhere || Boolean(assets.logo || assets.cover);
   const withAssets = { ...preview, logoUrl: assets.logo?.url ?? preview.logoUrl, coverUrl: assets.cover?.url ?? preview.coverUrl };
   const billing = `/${locale}/app/billing`;
 
@@ -74,7 +79,8 @@ export function ThemesScreen({
     setTimeout(() => setNotice(null), 4000);
   }
 
-  async function apply() {
+  /** Resolves to whether it applied, for the leave-page prompt. */
+  async function apply(): Promise<boolean> {
     setBusy(true);
     let ref = selectedRef;
     if (draft) {
@@ -82,21 +88,34 @@ export function ThemesScreen({
       const saved = await send<{ ref: string }>('POST', `/organizations/${orgId}/themes`, { nameEn, nameAr, colors, font, boldPrices, corners, header, layout });
       if (!saved.ok || !saved.data) {
         setBusy(false);
-        return say(th.failed, 'error');
+        say(th.failed, 'error');
+        return false;
       }
       ref = saved.data.ref;
     }
     const body = { ref, everywhere, ...(assets.logo ? { logoPhotoId: assets.logo.id } : {}), ...(assets.cover ? { coverPhotoId: assets.cover.id } : {}) };
     const res = await fetch(`/api/locations/${locationId}/theme`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
     setBusy(false);
-    if (!res?.ok) return say(th.failed, 'error');
+    if (!res?.ok) {
+      say(th.failed, 'error');
+      return false;
+    }
     setDraft(null);
     setAssets(NO_ASSETS);
     setSelectedRef(ref);
     setEverywhere(false);
+    setPreviewing(false);
     say(th.applied);
     router.refresh();
+    return true;
   }
+  const discard = () => {
+    setDraft(null);
+    setAssets(NO_ASSETS);
+    setSelectedRef(savedRef);
+    setEverywhere(false);
+  };
+  useUnsavedChanges(changed && canEdit, apply, discard);
 
   async function remove(e: ThemeEntry) {
     const res = await send('DELETE', `/organizations/${orgId}/themes/${e.ref.slice(7)}`);
@@ -442,11 +461,57 @@ export function ThemesScreen({
         }
       />
 
+      <UnsavedBar dirty={changed && canEdit} saving={busy} t={t.unsaved} onPreview={() => setPreviewing(true)} onSave={apply} onDiscard={discard} />
+      <Dialog
+        open={previewing}
+        onClose={() => setPreviewing(false)}
+        title={t.unsaved.previewTitle}
+        description={t.unsaved.previewBody}
+        closeLabel={t.unsaved.close}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPreviewing(false)}>
+              {t.unsaved.keepEditing}
+            </Button>
+            <Button onClick={apply} disabled={busy}>
+              {busy ? t.unsaved.saving : t.unsaved.save}
+            </Button>
+          </>
+        }
+      >
+        <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
+          <section aria-labelledby="theme-changes-h">
+            <h3 id="theme-changes-h" className="text-title-s font-semibold">
+              {t.unsaved.changes}
+            </h3>
+            <ul className="mt-3 grid gap-1.5 text-body-s">
+              {(draft || selectedRef !== savedRef) && (
+                <li className="rounded-lg bg-surface-2 px-3 py-2">
+                  <span className="font-semibold">{name(draft ?? selected)}</span>
+                  <span className="mt-0.5 block text-caption text-muted">
+                    <span className="line-through">{name(all.find((e) => e.ref === savedRef) ?? data.current)}</span> <span aria-hidden>{locale === 'ar' ? '←' : '→'}</span> {name(draft ?? selected)}
+                  </span>
+                </li>
+              )}
+              {assets.logo && <li className="rounded-lg bg-surface-2 px-3 py-2 font-semibold">{th.pendingLogo}</li>}
+              {assets.cover && <li className="rounded-lg bg-surface-2 px-3 py-2 font-semibold">{th.pendingCover}</li>}
+              {everywhere && <li className="rounded-lg bg-surface-2 px-3 py-2 font-semibold">{th.shareOn}</li>}
+            </ul>
+          </section>
+          <section aria-label={th.livePreview}>
+            <PhonePreview look={look} data={withAssets} lang={lang} />
+          </section>
+        </div>
+      </Dialog>
+
       <p
         role="status"
         aria-live="polite"
         className={cx(
-          'fixed bottom-5 start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-opacity rtl:translate-x-1/2',
+          'fixed start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-[opacity,bottom] rtl:translate-x-1/2',
+          // Above the save bar while it is showing.
+          changed && canEdit ? 'bottom-32 sm:bottom-24' : 'bottom-5',
           notice ? 'opacity-100' : 'pointer-events-none opacity-0',
           notice?.tone === 'error' ? 'bg-brand-fill text-white' : 'bg-ink text-surface',
         )}

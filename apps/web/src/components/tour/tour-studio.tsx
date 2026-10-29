@@ -3,13 +3,15 @@
 /* eslint-disable @next/next/no-img-element -- photos are pre-sized WebP files from the API */
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
-import { fill, formatPrice, tourSeconds, type Locale, type PublicTour, type SpotPayload, type TourDraft, type TourIssue, type TourSpot } from '@savora/shared';
+import { fill, formatPrice, tourChecks, tourSavePayload, tourScore, tourSeconds, type Locale, type PublicTour, type SpotPayload, type TourDraft, type TourIssue, type TourScene, type TourSpot } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { cx } from '@/lib/cx';
 import { primaryName } from '@/lib/menu-text';
 import { plural } from '@/lib/plural';
+import { useUnsavedChanges } from '@/lib/unsaved';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
+import { UnsavedBar } from '../unsaved';
 import { CubeIcon, GuestTour } from './guest-tour';
 import { sceneLabel, SceneDialog, SpotDialog } from './tour-dialogs';
 import { duration, TourViewer, useTourPlayer } from './tour-viewer';
@@ -87,7 +89,25 @@ const glass = 'border border-white/15 bg-[rgb(18_18_18/0.62)] shadow-[0_10px_24p
 const isSpot = (s: TourSpot | { x: number; y: number }): s is TourSpot => 'id' in s;
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
 
-/** Virtual trial: build a walk-through from photos, tag spots, and publish it to the guest menu. */
+const sameTour = (a: TourScene[], b: TourScene[]) => JSON.stringify(tourSavePayload(a)) === JSON.stringify(tourSavePayload(b));
+const newSpotId = () => `new:${crypto.randomUUID()}`;
+
+/** An upload or a retake answers with the whole server draft. Unsaved edits stay: scenes keep the
+ *  owner's names, order and spots, take any new photo and its measurements, and new uploads go
+ *  at the end. Scenes the owner deleted (but hasn't saved) stay deleted. */
+function mergeServer(work: TourDraft, before: TourDraft, next: TourDraft): TourDraft {
+  if (sameTour(work.scenes, before.scenes)) return next;
+  const fresh = next.scenes.filter((n) => !before.scenes.some((b) => b.id === n.id));
+  const kept = work.scenes.flatMap((s) => {
+    const n = next.scenes.find((x) => x.id === s.id);
+    return n ? [{ ...s, photo: n.photo, quality: n.quality }] : [];
+  });
+  return { ...next, scenes: [...kept, ...fresh] };
+}
+
+/** Virtual trial: build a walk-through from photos, tag spots, and publish it to the guest menu.
+ *  Photos upload straight away (the server measures them); names, times, order and spots stay in
+ *  this page's copy until the owner saves, as on the other editing pages. */
 export function TourStudio({
   initial,
   t,
@@ -107,7 +127,14 @@ export function TourStudio({
 }) {
   const v = t.tour;
   const router = useRouter();
-  const [draft, setDraft] = useState(initial);
+  // `server` is the last saved draft; `work` is the owner's copy. Score and checks follow the copy.
+  const [server, setServer] = useState(initial);
+  const [work, setWork] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const dirty = !sameTour(work.scenes, server.scenes);
+  const draft: TourDraft = { ...work, score: tourScore(work.scenes), checks: tourChecks(work.scenes, work.location.menuLive) };
+  const editScenes = (fn: (scenes: TourScene[]) => TourScene[]) => setWork((w) => ({ ...w, scenes: fn(w.scenes) }));
+  const editSpots = (sceneId: string, fn: (spots: TourSpot[]) => TourSpot[]) => editScenes((list) => list.map((x) => (x.id === sceneId ? { ...x, spots: fn(x.spots) } : x)));
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
@@ -137,7 +164,7 @@ export function TourStudio({
   }
   const errorText = (code: unknown) => (typeof code === 'string' && code in v.errors ? v.errors[code as keyof typeof v.errors] : v.failed);
 
-  /** Sends a change; the API answers with the whole draft, which replaces ours. */
+  /** Uploads, retakes and publishing: the API answers with the whole draft, merged into ours. */
   async function call(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown | FormData) {
     const form = body instanceof FormData;
     const res = await fetch(`/api${path}`, {
@@ -150,7 +177,8 @@ export function TourStudio({
       say(errorText(data?.error), 'error');
       return null;
     }
-    setDraft(data as TourDraft);
+    setWork((w) => mergeServer(w, server, data as TourDraft));
+    setServer(data as TourDraft);
     // The screen already shows the answer; this only drops the browser's copy of the page, so
     // coming back to it later never shows the draft from before this change.
     router.refresh();
@@ -172,6 +200,28 @@ export function TourStudio({
       say(plural(locale, next.scenes.length - before, v.uploaded));
     }
   }
+
+  async function save(): Promise<boolean> {
+    setSaving(true);
+    const res = await fetch(`/api/locations/${work.location.id}/tour`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(tourSavePayload(work.scenes)) }).catch(() => null);
+    setSaving(false);
+    const data = res?.headers.get('content-type')?.includes('json') ? await res.json() : null;
+    if (!res?.ok) {
+      say(res?.status === 409 ? t.unsaved.saveFailed : errorText(data?.error), 'error');
+      return false;
+    }
+    setServer(data as TourDraft);
+    setWork(data as TourDraft);
+    setPreviewing(false);
+    say(t.unsaved.saved);
+    router.refresh();
+    return true;
+  }
+  const discard = () => {
+    setWork(server);
+    setSelected(null);
+  };
+  useUnsavedChanges(dirty, save, discard);
 
   async function publish() {
     setBusy('publish');
@@ -202,7 +252,7 @@ export function TourStudio({
   const live = Boolean(draft.published);
   const publishLabel = busy === 'publish' ? v.publishing : live && !draft.hasChanges ? v.published : live ? v.update : v.publish;
   const publishButton = (className?: string, size?: 'md' | 'lg') => (
-    <Button size={size} variant={live && !draft.hasChanges ? 'secondary' : 'primary'} className={cx(className, live && !draft.hasChanges && 'disabled:opacity-100')} onClick={publish} disabled={!canPublish || !ready || busy !== null || (live && !draft.hasChanges)} title={!canPublish ? v.ownerOnly : !ready ? v.errors.not_ready : undefined}>
+    <Button size={size} variant={live && !draft.hasChanges ? 'secondary' : 'primary'} className={cx(className, live && !draft.hasChanges && 'disabled:opacity-100')} onClick={publish} disabled={!canPublish || !ready || busy !== null || dirty || (live && !draft.hasChanges)} title={!canPublish ? v.ownerOnly : dirty ? t.editor.saveBeforePublish : !ready ? v.errors.not_ready : undefined}>
       {live && !draft.hasChanges && <Icon d={ICON.check} size={14} strokeWidth={3} className="text-ok" />}
       {publishLabel}
     </Button>
@@ -324,7 +374,8 @@ export function TourStudio({
             </ul>
           </div>
         </section>
-        <Toast notice={notice} />
+        <UnsavedBar dirty={dirty} saving={saving} t={t.unsaved} onPreview={() => setPreviewing(true)} onSave={save} onDiscard={discard} />
+      <Toast notice={notice} lifted={dirty} />
       </>
     );
   }
@@ -350,8 +401,9 @@ export function TourStudio({
           </button>
           <button
             type="button"
-            onClick={async () => {
-              if (await call('DELETE', `/tour/spots/${sel.id}`)) setSelected(null);
+            onClick={() => {
+              editSpots(scene.id, (list) => list.filter((p) => p.id !== sel.id));
+              setSelected(null);
             }}
             aria-label={v.spotDelete}
             className="grid size-7 place-items-center rounded-md text-[#6e6e6e] hover:bg-black/5 hover:text-[#db1a1a]"
@@ -706,10 +758,16 @@ export function TourStudio({
         locale={locale}
         onClose={() => setDialog(null)}
         onSave={async (val) => {
-          if (await call('PATCH', `/tour/scenes/${scene.id}`, val)) setDialog(null);
+          editScenes((list) => list.map((x) => (x.id === scene.id ? { ...x, nameEn: val.nameEn?.trim() || null, nameAr: val.nameAr?.trim() || null, seconds: val.seconds } : x)));
+          setDialog(null);
         }}
         onMove={async (to) => {
-          if (await call('POST', `/tour/scenes/${scene.id}/move`, { to })) setIndex(to);
+          editScenes((list) => {
+            const rest = list.filter((x) => x.id !== scene.id);
+            rest.splice(Math.min(to, rest.length), 0, scene);
+            return rest;
+          });
+          setIndex(to);
         }}
         onRetake={async (file) => {
           const body = new FormData();
@@ -717,11 +775,11 @@ export function TourStudio({
           await call('PUT', `/tour/scenes/${scene.id}/photo`, body);
         }}
         onDelete={async () => {
-          if (await call('DELETE', `/tour/scenes/${scene.id}`)) {
-            setDialog(null);
-            setSelected(null);
-            setIndex(Math.max(0, at - 1));
-          }
+          // As on the server, spots that led to this scene go with it.
+          editScenes((list) => list.filter((x) => x.id !== scene.id).map((x) => ({ ...x, spots: x.spots.filter((p) => p.targetSceneId !== scene.id) })));
+          setDialog(null);
+          setSelected(null);
+          setIndex(Math.max(0, at - 1));
         }}
       />
       <SpotDialog
@@ -736,23 +794,38 @@ export function TourStudio({
         locale={locale}
         onClose={() => setDialog(null)}
         onSave={async (val: SpotPayload) => {
-          const existing = dialogSpot && 'id' in dialogSpot ? dialogSpot : null;
-          const next = existing ? await call('PATCH', `/tour/spots/${existing.id}`, val) : await call('POST', `/tour/scenes/${scene.id}/spots`, val);
-          if (!next) return false;
+          const existing = dialogSpot && isSpot(dialogSpot) ? dialogSpot : null;
+          const clean = (x: string | null | undefined) => x?.trim() || null;
+          // Only what the kind uses is kept, as on the server.
+          const spot: TourSpot = {
+            id: existing?.id ?? newSpotId(),
+            x: val.x,
+            y: val.y,
+            kind: val.kind,
+            labelEn: clean(val.labelEn),
+            labelAr: clean(val.labelAr),
+            noteEn: clean(val.noteEn),
+            noteAr: clean(val.noteAr),
+            itemId: val.kind === 'dish' ? (val.itemId ?? null) : null,
+            targetSceneId: val.kind === 'scene' ? (val.targetSceneId ?? null) : null,
+          };
+          editSpots(scene.id, (list) => (existing ? list.map((p) => (p.id === existing.id ? spot : p)) : [...list, spot]));
           setDialog(null);
           // Show the new spot's card straight away.
-          if (!existing) setSelected(next.scenes.find((s) => s.id === scene.id)?.spots.at(-1)?.id ?? null);
+          if (!existing) setSelected(spot.id);
           return true;
         }}
         onDelete={async () => {
-          if (dialogSpot && 'id' in dialogSpot && (await call('DELETE', `/tour/spots/${dialogSpot.id}`))) {
+          if (dialogSpot && 'id' in dialogSpot) {
+            editSpots(scene.id, (list) => list.filter((p) => p.id !== dialogSpot.id));
             setDialog(null);
             setSelected(null);
           }
         }}
       />
       {previewing && <GuestTour tour={preview} t={guestText} locale={locale} menuHref={`/${locale}/r/${draft.location.slug}`} onClose={() => setPreviewing(false)} />}
-      <Toast notice={notice} />
+      <UnsavedBar dirty={dirty} saving={saving} t={t.unsaved} onPreview={() => setPreviewing(true)} onSave={save} onDiscard={discard} />
+      <Toast notice={notice} lifted={dirty} />
     </>
   );
 }
@@ -771,13 +844,15 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
-function Toast({ notice }: { notice: { text: string; tone: 'ok' | 'error' } | null }) {
+/** `lifted` while the save bar is showing, so the two never overlap. */
+function Toast({ notice, lifted }: { notice: { text: string; tone: 'ok' | 'error' } | null; lifted?: boolean }) {
   return (
     <p
       role="status"
       aria-live="polite"
       className={cx(
-        'fixed bottom-5 start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-opacity rtl:translate-x-1/2',
+        'fixed start-1/2 z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-xl px-4 py-3 text-body-s font-medium shadow-raised transition-[opacity,bottom] rtl:translate-x-1/2',
+        lifted ? 'bottom-32 sm:bottom-24' : 'bottom-5',
         notice ? 'opacity-100' : 'pointer-events-none opacity-0',
         notice?.tone === 'error' ? 'bg-brand-fill text-white' : 'bg-ink text-surface',
       )}

@@ -66,7 +66,8 @@ export function Dialog({
               </svg>
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+          {/* Confirmations can be a title, a sentence and buttons, with no body at all. */}
+          {children ? <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div> : null}
           {footer && <footer className="flex flex-wrap items-center justify-end gap-2.5 border-t border-line bg-surface-2 px-6 py-4">{footer}</footer>}
         </div>
       )}

@@ -8,6 +8,7 @@ import {
   quality,
   SceneInput,
   SpotInput,
+  TourSaveInput,
   tourChecks,
   tourScore,
   tourSeconds,
@@ -287,6 +288,51 @@ export function tourRoutes(app: FastifyInstance, db: Db, store: MediaStore, spac
     if (!found) return;
     await db.delete(schema.tourSpots).where(eq(schema.tourSpots.id, found.spot.id));
     return loadDraft(db, found.loc, spaceAvailable);
+  });
+
+  // The studio's Save: names, times, order and spots of every scene, in one transaction. Photos are
+  // not part of it: they upload on their own, since the server measures them.
+  app.put('/locations/:locationId/tour', auth, async (req, reply) => {
+    const loc = await tourLocation(req, reply, (req.params as { locationId: string }).locationId);
+    if (!loc) return;
+    const body = TourSaveInput.safeParse(req.body);
+    if (!body.success) return invalid(reply, body.error);
+    const sc = schema.tourScenes;
+    const sp = schema.tourSpots;
+    const keepIds = body.data.scenes.map((s) => s.id);
+
+    // Each spot points somewhere that will still exist: a dish of this place, or another kept scene.
+    const itemIds = [...new Set(body.data.scenes.flatMap((s) => s.spots.filter((p) => p.kind === 'dish').map((p) => p.itemId!)))];
+    const items = itemIds.length ? await db.select({ id: schema.menuItems.id }).from(schema.menuItems).where(and(inArray(schema.menuItems.id, itemIds), eq(schema.menuItems.locationId, loc.id))) : [];
+    const badTarget = body.data.scenes.some((s) => s.spots.some((p) => p.kind === 'scene' && (p.targetSceneId === s.id || !keepIds.includes(p.targetSceneId!))));
+    if (items.length !== itemIds.length || badTarget) return reply.code(400).send({ error: 'invalid', issues: [badTarget ? 'targetSceneId' : 'itemId'] });
+
+    const result = await db.transaction(async (tx) => {
+      const have = new Set((await tx.select({ id: sc.id }).from(sc).where(eq(sc.locationId, loc.id))).map((r) => r.id));
+      const haveSpots = have.size ? await tx.select({ id: sp.id }).from(sp).where(inArray(sp.sceneId, [...have])) : [];
+      const spotIds = new Set(haveSpots.map((r) => r.id));
+      const stale = keepIds.some((id) => !have.has(id)) || body.data.scenes.some((s) => s.spots.some((p) => p.id && !spotIds.has(p.id)));
+      if (stale) return { error: 'stale' as const };
+
+      const keptSpots = new Set<string>();
+      for (const [position, { id, spots, ...fields }] of body.data.scenes.entries()) {
+        await tx.update(sc).set({ ...fields, position }).where(eq(sc.id, id));
+        for (const { id: spotId, ...spot } of spots) {
+          const values = { ...spotValues(spot), sceneId: id };
+          if (spotId) {
+            await tx.update(sp).set(values).where(eq(sp.id, spotId));
+            keptSpots.add(spotId);
+          } else await tx.insert(sp).values(values);
+        }
+      }
+      const dropSpots = [...spotIds].filter((id) => !keptSpots.has(id));
+      if (dropSpots.length) await tx.delete(sp).where(inArray(sp.id, dropSpots));
+      const dropScenes = [...have].filter((id) => !keepIds.includes(id));
+      if (dropScenes.length) await tx.delete(sc).where(inArray(sc.id, dropScenes));
+      return { ok: true as const };
+    });
+    if ('error' in result) return reply.code(409).send(result);
+    return loadDraft(db, loc, spaceAvailable);
   });
 
   // ---------- Publishing ----------

@@ -9,6 +9,7 @@ import { LocationSwitcher } from './location-switcher';
 import { PageToggles } from './page-toggles';
 import { ShellFrame } from './shell-frame';
 import { SignOutButton } from './sign-out-button';
+import { UnsavedGuard } from './unsaved';
 import { Logo } from './ui/logo';
 
 export type NavKey = 'overview' | 'menuEditor' | 'menuThemes' | 'qr' | 'analytics' | 'virtualTrial' | 'settings' | 'billing';
@@ -96,6 +97,7 @@ export function AppShell({ t, locale, active, workspace, children }: { t: Dictio
   return (
     <ShellFrame sidebar={sidebar} logo={<Logo width={96} />} toolbar={<PageToggles locale={locale} labels={t.common} />} labels={{ menu: t.shell.menu, close: t.shell.close }}>
       {children}
+      <UnsavedGuard t={t.unsaved} />
     </ShellFrame>
   );
 }

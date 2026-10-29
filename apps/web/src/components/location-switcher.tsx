@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { guardLeave } from '@/lib/unsaved';
 import type { LocationOption } from '@/lib/workspace';
 
 /** Picks which location the workspace shows. The choice is remembered in a cookie for a year. */
@@ -11,8 +12,12 @@ export function LocationSwitcher({ options, current, label, pausedLabel }: { opt
       aria-label={label}
       value={current}
       onChange={(e) => {
-        document.cookie = `savora_loc=${e.target.value}; path=/; max-age=31536000; samesite=lax`;
-        router.refresh();
+        const id = e.target.value;
+        // Another location means another menu and settings, so unsaved changes here are settled first.
+        guardLeave(() => {
+          document.cookie = `savora_loc=${id}; path=/; max-age=31536000; samesite=lax`;
+          router.refresh();
+        });
       }}
       className="mt-2.5 h-10 w-full rounded-[10px] border border-line-2 bg-surface px-2.5 text-body-s"
     >

@@ -46,6 +46,7 @@ export default async function MenuEditorPage() {
           key={draft.location.id}
           draft={draft}
           t={e}
+          u={t.unsaved}
           locale={locale}
           reader={{ allowed: can(org.plan, 'menuImport'), ai: me.features.ai }}
           brand={{

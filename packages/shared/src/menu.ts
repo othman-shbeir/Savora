@@ -122,6 +122,17 @@ const median = (xs: number[]) => {
 
 const label = (x: { nameEn: string | null; nameAr: string | null }) => x.nameEn || x.nameAr || '';
 
+/** Free items and prices far from the menu's typical (median) price are usually typos (18 vs 1800).
+ *  Only dishes guests can see count. Shared by the health check and the editor's detail view. */
+export function priceCheck(categories: MenuCategory[]) {
+  const shown = categories.flatMap((c) => c.items).filter((i) => i.available);
+  const typical = shown.length ? median(shown.map((i) => i.priceMinor)) : 0;
+  const reason = (i: MenuItem): 'free' | 'high' | 'low' | null =>
+    i.priceMinor === 0 ? 'free' : typical > 0 && i.priceMinor > typical * 15 ? 'high' : typical > 0 && i.priceMinor * 15 < typical ? 'low' : null;
+  const odd = shown.filter((i) => reason(i) !== null);
+  return { typical, odd, reason };
+}
+
 /** A quick pass over the draft before it becomes the public menu. Warnings never block publishing,
  *  except an empty menu. */
 export function menuHealth(categories: MenuCategory[]): HealthCheck[] {
@@ -134,10 +145,7 @@ export function menuHealth(categories: MenuCategory[]): HealthCheck[] {
   const untranslated = missing === 'ar' ? noAr : noEn;
 
   const empty = categories.filter((c) => !c.items.some((i) => i.available));
-
-  // Free items and prices far from the menu's typical price are usually typos (18 vs 1800).
-  const mid = shown.length ? median(shown.map((i) => i.priceMinor)) : 0;
-  const odd = shown.filter((i) => i.priceMinor === 0 || (mid > 0 && (i.priceMinor > mid * 15 || i.priceMinor * 15 < mid)));
+  const { odd } = priceCheck(categories);
 
   return [
     { key: 'items', ok: shown.length > 0, count: shown.length, examples: [] },

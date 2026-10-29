@@ -269,7 +269,15 @@ export function MenuEditor({
           }}
           onError={(text) => say(text, 'error')}
         />
-        <HealthCard checks={draft.health} t={t} locale={locale} />
+        <HealthCard
+          checks={draft.health}
+          categories={categories}
+          currency={location.currency}
+          t={t}
+          locale={locale}
+          onEditItem={(item) => setOpen({ kind: 'item', item })}
+          onEditCategories={() => setOpen({ kind: 'categories' })}
+        />
       </div>
 
       <section className="mt-9" aria-labelledby="items-heading">

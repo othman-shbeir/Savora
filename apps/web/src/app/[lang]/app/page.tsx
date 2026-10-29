@@ -73,21 +73,23 @@ export default async function OverviewPage() {
 
       {org.brands.map((b) => (
         <section key={b.id} className="mt-9">
-          <div className="flex items-end justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span aria-hidden className="grid size-8 place-items-center rounded-lg border border-line bg-surface text-caption font-bold text-brand">
-                {nameOf(b, locale).slice(0, 1)}
-              </span>
-              <div>
+          {/* The location count sits with the brand it counts, not across the page from it. */}
+          <div className="flex items-center gap-3">
+            <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-surface text-caption font-bold text-brand">
+              {nameOf(b, locale).slice(0, 1)}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                 <h2 className="text-title-m font-semibold">{nameOf(b, locale)}</h2>
-                {b.nameAr && locale === 'en' && (
-                  <p lang="ar" dir="rtl" className="text-caption text-muted">
-                    {b.nameAr}
-                  </p>
-                )}
+                <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-overline font-semibold tracking-[0.1em] text-muted uppercase">{fill(o.locationsCount, { n: b.locations.length })}</span>
               </div>
+              {b.nameAr && locale === 'en' && (
+                // w-fit keeps the right-to-left name at the start edge, under the English one.
+                <p lang="ar" dir="rtl" className="w-fit text-caption text-muted">
+                  {b.nameAr}
+                </p>
+              )}
             </div>
-            <p className="text-overline font-semibold tracking-[0.1em] text-muted uppercase">{fill(o.locationsCount, { n: b.locations.length })}</p>
           </div>
           <ul className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {b.locations.map((l) => (

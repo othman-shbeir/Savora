@@ -19,6 +19,13 @@ const dateFmt = (locale: Locale) => new Intl.DateTimeFormat(locale === 'ar' ? 'a
 
 const ICON = {
   check: <polyline points="20 6 9 17 4 12" />,
+  x: <path d="M18 6 6 18M6 6l12 12" />,
+  copy: (
+    <>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+    </>
+  ),
   leaf: (
     <>
       <path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14" />
@@ -152,7 +159,7 @@ export function BillingScreen({ b, t, locale, orgId, userName }: { b: BillingOve
           <p className="mt-2 max-w-xl text-body-m text-muted">{t.lead}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <a href="#history" className="inline-flex h-10 items-center gap-2 px-2 text-body-s font-semibold text-ink-2 hover:text-ink">
+          <a href="#history" className="inline-flex h-10 items-center gap-2 rounded-[11px] border border-line-2 bg-surface px-4 text-body-s font-semibold text-ink transition-colors hover:bg-surface-2">
             <Icon d={ICON.receipt} />
             {t.history}
           </a>
@@ -210,7 +217,7 @@ export function BillingScreen({ b, t, locale, orgId, userName }: { b: BillingOve
               <p className="mt-1 text-body-s text-ink-2">{fill(t.pendingBody, { amount: usd(b.pending.amountCents) })}</p>
             </div>
             {b.canManage && (
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => post(`/requests/${b.pending!.id}`, undefined, 'DELETE')}>
+              <Button variant="danger" size="sm" icon={<Icon d={ICON.x} size={14} />} disabled={busy} onClick={() => post(`/requests/${b.pending!.id}`, undefined, 'DELETE')}>
                 {t.cancelRequest}
               </Button>
             )}
@@ -224,13 +231,18 @@ export function BillingScreen({ b, t, locale, orgId, userName }: { b: BillingOve
                 </span>
                 <button
                   type="button"
-                  className="text-caption font-semibold text-brand"
+                  aria-live="polite"
+                  className={cx(
+                    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-caption font-semibold transition-colors',
+                    copied ? 'bg-ok-soft text-ok' : 'bg-brand-soft text-brand hover:bg-brand-fill hover:text-white',
+                  )}
                   onClick={async () => {
                     await navigator.clipboard?.writeText(b.pending!.reference).catch(() => {});
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1600);
                   }}
                 >
+                  <Icon d={copied ? ICON.check : ICON.copy} size={13} />
                   {copied ? t.copied : t.copy}
                 </button>
               </dd>

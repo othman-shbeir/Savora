@@ -39,7 +39,7 @@ export function SectionNav({ sections, label }: { sections: Array<{ id: string; 
 
   if (sections.length < 2) return null;
   return (
-    <nav aria-label={label} className="sticky top-0 z-20 -mx-5 mt-5 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur">
+    <nav aria-label={label} className="sticky top-0 z-20 -mx-5 mt-5 border-b border-line bg-surface/95 px-5 py-3 backdrop-blur md:-mx-8 md:px-8 lg:mx-0 lg:px-0">
       <ul ref={listRef} className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
         {sections.map((s) => (
           <li key={s.id} data-id={s.id} className="shrink-0">

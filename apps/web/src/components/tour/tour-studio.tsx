@@ -203,9 +203,11 @@ export function TourStudio({
     </Button>
   );
 
-  // Draft as guests would see it, for the preview.
+  // Draft as guests would see it, for the preview. Only the photo tour: the 3D walk-through is
+  // published on its own, and the guest tour doesn't show it.
   const preview: PublicTour = {
     slug: draft.location.slug,
+    space: null,
     name: place,
     currency: draft.location.currency,
     scenes: scenes.map((s) => ({

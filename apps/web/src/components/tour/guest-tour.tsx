@@ -163,11 +163,18 @@ function SpotSheet({ spot, t, locale, currency, menuHref, label, onClose }: { sp
   );
 }
 
-/** The guest menu's way in: a dark card above the dishes. */
-export function TourTeaserCard({ href, cover, scenes, seconds, t, locale }: { href: string; cover: string; scenes: number; seconds: number; t: Text; locale: Locale }) {
+/** The guest menu's way in: a dark card above the dishes. Without a cover (a 3D walk-through with
+ *  no poster and no photo scenes) the thumbnail is the cube mark. */
+export function TourTeaserCard({ href, cover, scenes, seconds, t, locale }: { href: string; cover: string | null; scenes: number; seconds: number; t: Text; locale: Locale }) {
   return (
     <Link href={href} className="mt-4 flex items-center gap-3 rounded-2xl bg-[#1c1c1c] p-2.5 text-white transition-transform hover:-translate-y-0.5">
-      <img src={cover} alt="" className="size-12 shrink-0 rounded-[10px] object-cover" />
+      {cover ? (
+        <img src={cover} alt="" className="size-12 shrink-0 rounded-[10px] object-cover" />
+      ) : (
+        <span aria-hidden className="grid size-12 shrink-0 place-items-center rounded-[10px] bg-[#2e2e2e] text-[#a6a6a6]">
+          <CubeIcon />
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="block text-title-s font-semibold">
           {t.tourTitle}{' '}

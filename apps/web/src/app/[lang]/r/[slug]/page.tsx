@@ -163,7 +163,9 @@ export default async function GuestMenuPage({ params }: Props) {
                 ))}
               </nav>
             )}
-            {menu.tour && <TourTeaserCard href={`/${locale}/r/${menu.slug}/tour`} cover={menu.tour.cover.thumbUrl} scenes={menu.tour.scenes} seconds={menu.tour.seconds} t={g} locale={locale} />}
+            {menu.tour && (
+              <TourTeaserCard href={`/${locale}/r/${menu.slug}/tour`} cover={menu.tour.cover?.thumbUrl ?? null} scenes={menu.tour.scenes} seconds={menu.tour.seconds} t={g} locale={locale} />
+            )}
           </header>
           {place.pin && (
             <section aria-labelledby="find-us" className="order-3 mt-8 overflow-hidden rounded-[var(--r-tile)] border border-line lg:mt-6">

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useRef, useState, useTransition } from 'react';
+import { startTransition, useOptimistic, useRef, useState, useTransition } from 'react';
 import { fill, formatPrice, parsePastedMenu, type ImportPayload, type Locale, type MenuDraft, type MenuItem } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { send } from '@/lib/client-api';
@@ -27,8 +27,30 @@ type Open =
   | { kind: 'categories' }
   | { kind: 'review'; parsed: ImportPayload; notes?: string[] };
 
+/** Changes the list shows the moment they are made, before the API has answered. */
+type Edit = { kind: 'available'; id: string; on: boolean } | { kind: 'move'; id: string; direction: 'up' | 'down' } | { kind: 'delete'; id: string };
+
+function applyEdit(draft: MenuDraft, e: Edit): MenuDraft {
+  const categories = draft.categories.map((c) => {
+    const i = c.items.findIndex((item) => item.id === e.id);
+    if (i < 0) return c;
+    const items = [...c.items];
+    if (e.kind === 'available') items[i] = { ...items[i]!, available: e.on };
+    else if (e.kind === 'delete') items.splice(i, 1);
+    else {
+      // Moves stay inside the category, as on the server (the buttons are off at its ends).
+      const j = e.direction === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= items.length) return c;
+      [items[i], items[j]] = [items[j]!, items[i]!];
+    }
+    return { ...c, items };
+  });
+  return { ...draft, categories };
+}
+
 /** The Menu editor. Every change saves straight to the draft and the page re-reads it from the API,
- *  so what is on screen is always what is stored. */
+ *  so what is on screen is always what is stored. Quick changes (show/hide, reorder, delete) appear
+ *  at once and roll back with a notice if the save fails. */
 export function MenuEditor({
   draft,
   t,
@@ -52,7 +74,9 @@ export function MenuEditor({
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const { categories, location } = draft;
+  const [view, show] = useOptimistic(draft, applyEdit);
+  const { location } = draft;
+  const { categories } = view;
   const items = categories.flatMap((c) => c.items);
   const shown = filter === 'all' ? categories : categories.filter((c) => c.id === filter);
   const activeFilter = shown.length ? filter : 'all';
@@ -66,16 +90,18 @@ export function MenuEditor({
   };
   const refresh = () => startRefresh(() => router.refresh());
 
-  /** Runs a change against the API, then re-reads the draft. Returns whether it worked. */
-  async function change(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown) {
-    const res = await send(method, path, body);
-    if (!res.ok) {
-      say(t.failed, 'error');
-      return null;
-    }
-    refresh();
-    return res;
-  }
+  /** Shows `e` straight away, saves it, then re-reads the draft. The optimistic view lasts until
+   *  the re-read lands (or, when the save fails, until the action ends, so it snaps back). */
+  const edit = (e: Edit, method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown) =>
+    new Promise<void>((done) =>
+      startTransition(async () => {
+        show(e);
+        const res = await send(method, path, body);
+        if (res.ok) router.refresh();
+        else say(t.failed, 'error');
+        done();
+      }),
+    );
 
   function organize() {
     const parsed = parsePastedMenu(paste, { nameEn: 'Menu', nameAr: 'القائمة' });
@@ -302,8 +328,8 @@ export function MenuEditor({
                 last={last}
                 t={t}
                 locale={locale}
-                onToggle={(on) => change('PATCH', `/items/${item.id}`, { available: on })}
-                onMove={(direction) => change('POST', `/items/${item.id}/move`, { direction })}
+                onToggle={(on) => edit({ kind: 'available', id: item.id, on }, 'PATCH', `/items/${item.id}`, { available: on })}
+                onMove={(direction) => edit({ kind: 'move', id: item.id, direction }, 'POST', `/items/${item.id}/move`, { direction })}
                 onEdit={() => setOpen({ kind: 'item', item })}
                 onDelete={() => setOpen({ kind: 'delete', item })}
               />
@@ -334,7 +360,9 @@ export function MenuEditor({
         onClose={() => setOpen({ kind: 'none' })}
         onConfirm={async () => {
           if (open.kind !== 'delete') return;
-          if (await change('DELETE', `/items/${open.item.id}`)) setOpen({ kind: 'none' });
+          const id = open.item.id;
+          setOpen({ kind: 'none' });
+          await edit({ kind: 'delete', id }, 'DELETE', `/items/${id}`);
         }}
       />
       <CategoriesDialog open={open.kind === 'categories'} categories={categories} t={t} locale={locale} locationId={location.id} onClose={() => setOpen({ kind: 'none' })} onChanged={refresh} />

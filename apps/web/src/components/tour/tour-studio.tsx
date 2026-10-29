@@ -1,6 +1,7 @@
 'use client';
 
 /* eslint-disable @next/next/no-img-element -- photos are pre-sized WebP files from the API */
+import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { fill, formatPrice, tourSeconds, type Locale, type PublicTour, type SpotPayload, type TourDraft, type TourIssue, type TourSpot } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
@@ -105,6 +106,7 @@ export function TourStudio({
   canPublish: boolean;
 }) {
   const v = t.tour;
+  const router = useRouter();
   const [draft, setDraft] = useState(initial);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -149,6 +151,9 @@ export function TourStudio({
       return null;
     }
     setDraft(data as TourDraft);
+    // The screen already shows the answer; this only drops the browser's copy of the page, so
+    // coming back to it later never shows the draft from before this change.
+    router.refresh();
     return data as TourDraft;
   }
 

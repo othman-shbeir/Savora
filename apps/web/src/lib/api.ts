@@ -14,13 +14,14 @@ export async function apiServer(path: string, init: RequestInit = {}) {
   });
 }
 
-/** The signed-in user and their workspace, or null when signed out. */
-export async function getMe(): Promise<Me | null> {
+/** The signed-in user and their workspace, or null when signed out. Deduplicated per request, so
+ *  the workspace layout and the page share one call. */
+export const getMe = cache(async (): Promise<Me | null> => {
   const res = await apiServer('/me');
   if (res.status === 401) return null;
   if (!res.ok) throw new Error(`API /me failed: ${res.status}`);
   return res.json();
-}
+});
 
 export async function getOverview(orgId: string): Promise<Overview | null> {
   const res = await apiServer(`/organizations/${orgId}/overview`);

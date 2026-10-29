@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fill, type AnalyticsReport, type Locale } from '@savora/shared';
-import { AppShell } from '@/components/app-shell';
 import { QrStudio } from '@/components/qr/qr-studio';
 import { Badge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
@@ -45,7 +44,7 @@ function WeekCard({ week, t, locale }: { week: AnalyticsReport; t: Awaited<Retur
 /** The current location's permanent QR code: print studio, share links and why it never changes. */
 export default async function QrPage() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
-  const { ctx, org, shell } = await requireWorkspace(locale);
+  const { ctx, org } = await requireWorkspace(locale);
   const q = t.qr;
   const loc = ctx.location;
   const draft = loc ? await getMenu(loc.id) : null;
@@ -55,7 +54,7 @@ export default async function QrPage() {
   const week = live && loc ? await getAnalytics(loc.id, '7d') : null;
 
   return (
-    <AppShell t={t} locale={locale} active="qr" workspace={shell}>
+    <>
       <header className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <Overline>{q.overline}</Overline>
@@ -90,6 +89,6 @@ export default async function QrPage() {
           <p className="text-body-m text-muted">{t.editor.noLocation}</p>
         </Card>
       )}
-    </AppShell>
+    </>
   );
 }

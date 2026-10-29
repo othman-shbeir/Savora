@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { can } from '@savora/shared';
-import { AppShell } from '@/components/app-shell';
 import { MenuEditor } from '@/components/menu/menu-editor';
 import { ButtonLink } from '@/components/ui/button';
 import { Card, Overline } from '@/components/ui/card';
@@ -16,14 +15,14 @@ export async function generateMetadata(): Promise<Metadata> {
 /** The current location's draft menu: start points, publishing, health checks and the item list. */
 export default async function MenuEditorPage() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
-  const { ctx, org, me, shell } = await requireWorkspace(locale);
+  const { ctx, org, me } = await requireWorkspace(locale);
   const e = t.editor;
   const draft = ctx.location ? await getMenu(ctx.location.id) : null;
   if (ctx.location && !draft) notFound();
   const brand = ctx.brand ?? org.brands[0];
 
   return (
-    <AppShell t={t} locale={locale} active="menuEditor" workspace={shell}>
+    <>
       <header className="flex flex-wrap items-end justify-between gap-5">
         <div>
           <Overline>{e.overline}</Overline>
@@ -59,6 +58,6 @@ export default async function MenuEditorPage() {
           <p className="text-body-m text-muted">{e.noLocation}</p>
         </Card>
       )}
-    </AppShell>
+    </>
   );
 }

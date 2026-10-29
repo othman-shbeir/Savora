@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { fill, isRange, type AnalyticsRange, type AnalyticsReport, type Insight, type Locale } from '@savora/shared';
 import { ScanChart, type ChartBar } from '@/components/analytics/scan-chart';
-import { AppShell } from '@/components/app-shell';
 import { ButtonLink } from '@/components/ui/button';
 import { Card, Overline } from '@/components/ui/card';
 import { getAnalyticsOrLock } from '@/lib/api';
@@ -76,7 +75,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/[lang]
   const [t, locale, query] = await Promise.all([getDictionary(), getLocale(), searchParams]);
   const a = t.analytics;
   const range: AnalyticsRange = isRange(query.range) ? query.range : '7d';
-  const { ctx, shell } = await requireWorkspace(locale);
+  const { ctx } = await requireWorkspace(locale);
   const loc = ctx.location;
   const result = loc ? await getAnalyticsOrLock(loc.id, range) : null;
   if (loc && !result) notFound();
@@ -115,7 +114,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/[lang]
   if (locked) {
     // Starter: the screen explains what Growth adds, and that scans are already waiting.
     return (
-      <AppShell t={t} locale={locale} active="analytics" workspace={shell}>
+      <>
         {header}
         <Card className="mt-7 grid max-w-2xl gap-3 p-8">
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-soft px-2.5 py-1 text-caption font-semibold text-brand">
@@ -131,18 +130,18 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/[lang]
             {t.locks.seePlans}
           </ButtonLink>
         </Card>
-      </AppShell>
+      </>
     );
   }
 
   if (!loc || !report) {
     return (
-      <AppShell t={t} locale={locale} active="analytics" workspace={shell}>
+      <>
         {header}
         <Card className="mt-7 max-w-xl p-6">
           <p className="text-body-m text-muted">{t.editor.noLocation}</p>
         </Card>
-      </AppShell>
+      </>
     );
   }
 
@@ -160,7 +159,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/[lang]
   const split = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
 
   return (
-    <AppShell t={t} locale={locale} active="analytics" workspace={shell}>
+    <>
       {header}
 
       {!live || empty ? (
@@ -280,7 +279,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<'/[lang]
         </svg>
         {a.privacy}
       </p>
-    </AppShell>
+    </>
   );
 }
 

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { AppShell } from '@/components/app-shell';
 import type { PreviewData } from '@/components/themes/theme-preview';
 import { ThemesScreen } from '@/components/themes/themes-screen';
 import { Card } from '@/components/ui/card';
@@ -22,7 +21,7 @@ const SAMPLE: PreviewData['items'] = [
 /** Menu themes for the location chosen in the sidebar. */
 export default async function ThemesPage() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
-  const { ctx, org, me, shell } = await requireWorkspace(locale);
+  const { ctx, org, me } = await requireWorkspace(locale);
   const loc = ctx.location;
   const [data, menu] = loc ? await Promise.all([getThemes(loc.id), getMenu(loc.id)]) : [null, null];
   if (loc && (!data || !menu)) notFound();
@@ -45,7 +44,7 @@ export default async function ThemesPage() {
     : null;
 
   return (
-    <AppShell t={t} locale={locale} active="menuThemes" workspace={shell}>
+    <>
       {loc && data && preview ? (
         <ThemesScreen
           key={loc.id}
@@ -65,6 +64,6 @@ export default async function ThemesPage() {
           <p className="text-body-m text-muted">{t.editor.noLocation}</p>
         </Card>
       )}
-    </AppShell>
+    </>
   );
 }

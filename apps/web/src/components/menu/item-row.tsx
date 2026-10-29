@@ -35,10 +35,10 @@ export function ItemRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  // Shows the switch's new position while the save is in flight.
-  const [pending, setPending] = useState<boolean | null>(null);
+  // The editor flips `item.available` the moment the switch moves; `busy` only stops a second
+  // reorder from racing the first one to the server.
   const [busy, setBusy] = useState(false);
-  const available = pending ?? item.available;
+  const available = item.available;
   const name = primaryName(item, locale);
   const other = secondaryName(item, locale);
   const desc = descriptionOf(item, locale);
@@ -99,16 +99,7 @@ export function ItemRow({
       </strong>
 
       <div className="col-span-3 flex items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-2 sm:justify-end sm:border-0 sm:pt-0">
-        <Switch
-          label={fill(t.showOnMenu, { name })}
-          checked={available}
-          disabled={pending !== null}
-          onChange={async (on) => {
-            setPending(on);
-            await onToggle(on);
-            setPending(null);
-          }}
-        />
+        <Switch label={fill(t.showOnMenu, { name })} checked={available} onChange={(on) => onToggle(on)} />
         <div className="flex items-center gap-0.5">
           <button type="button" className={iconButton} disabled={first || busy} aria-label={fill(t.moveUp, { name })} onClick={() => run(() => onMove('up'))}>
             <span aria-hidden>↑</span>

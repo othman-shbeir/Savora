@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { AppShell } from '@/components/app-shell';
 import { TourStudio } from '@/components/tour/tour-studio';
 import { ButtonLink } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,14 +14,14 @@ export async function generateMetadata(): Promise<Metadata> {
 /** Virtual trial for the location chosen in the sidebar. */
 export default async function VirtualTrialPage() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
-  const { ctx, org, shell } = await requireWorkspace(locale);
+  const { ctx, org } = await requireWorkspace(locale);
   const loc = ctx.location;
   const res = loc ? await getTourOrLock(loc.id) : null;
   if (loc && !res) notFound();
   const brand = ctx.brand ?? org.brands[0];
 
   return (
-    <AppShell t={t} locale={locale} active="virtualTrial" workspace={shell}>
+    <>
       {!loc || !res ? (
         <Card className="max-w-xl p-6">
           <p className="text-body-m text-muted">{t.editor.noLocation}</p>
@@ -59,6 +58,6 @@ export default async function VirtualTrialPage() {
           canPublish={org.role !== 'editor'}
         />
       )}
-    </AppShell>
+    </>
   );
 }

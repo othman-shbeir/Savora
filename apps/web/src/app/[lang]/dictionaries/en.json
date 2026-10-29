@@ -63,7 +63,8 @@
     "close": "Close menu",
     "switchLocation": "Switch location",
     "signOut": "Sign out",
-    "account": "Account"
+    "account": "Account",
+    "loading": "Loading…"
   },
   "auth": {
     "title": "Sign in",

@@ -26,6 +26,9 @@ const nextConfig: NextConfig = {
   // A self-contained server bundle for the Docker image (see Dockerfile.web).
   output: 'standalone',
   poweredByHeader: false,
+  // Keep pages the owner has just seen in the browser for 30 seconds, so going back to one is
+  // instant. Every save calls router.refresh(), which empties this cache, so edits never show stale.
+  experimental: { staleTimes: { dynamic: 30 } },
   // Shared plan rules run in the browser too; make sure they see the same setting as the server.
   env: { NEXT_PUBLIC_PLANS_ENABLED: process.env.NEXT_PUBLIC_PLANS_ENABLED ?? 'true' },
   async headers() {

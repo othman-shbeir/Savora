@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { fill } from '@savora/shared';
-import { AppShell } from '@/components/app-shell';
 import { Badge } from '@/components/ui/badge';
 import { ButtonLink } from '@/components/ui/button';
 import { Card, Overline } from '@/components/ui/card';
@@ -29,7 +28,7 @@ function Check({ done }: { done: boolean }) {
 
 export default async function OverviewPage() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
-  const { org, ctx, shell } = await requireWorkspace(locale);
+  const { org, ctx } = await requireWorkspace(locale);
   const overview = await getOverview(org.id);
   const o = t.overview;
   const stats = overview?.stats ?? { locations: 0, live: 0, menuItems: 0, totalScans: 0 };
@@ -44,7 +43,7 @@ export default async function OverviewPage() {
   ];
 
   return (
-    <AppShell t={t} locale={locale} active="overview" workspace={shell}>
+    <>
       <header>
         <Overline>{o.overline}</Overline>
         <h1 className="mt-2.5 text-heading-l font-semibold tracking-[-0.02em]">{nameOf(org, locale)}</h1>
@@ -170,6 +169,6 @@ export default async function OverviewPage() {
           </div>
         </Card>
       </div>
-    </AppShell>
+    </>
   );
 }

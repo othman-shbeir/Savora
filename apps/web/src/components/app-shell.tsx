@@ -4,6 +4,7 @@ import type { Locale } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { cx } from '@/lib/cx';
 import type { LocationOption } from '@/lib/workspace';
+import { AppNav } from './app-nav';
 import { LocationSwitcher } from './location-switcher';
 import { ShellFrame } from './shell-frame';
 import { SignOutButton } from './sign-out-button';
@@ -30,7 +31,8 @@ export type ShellWorkspace = {
   canAddLocation?: boolean;
 };
 
-/** Workspace layout: sidebar at the start edge with the organization, location switcher and navigation. */
+/** Workspace layout: sidebar at the start edge with the organization, location switcher and navigation.
+ *  Rendered once by the /app layout; `active` is only for previews (the design page) that have no route. */
 export function AppShell({ t, locale, active, workspace, children }: { t: Dictionary; locale: Locale; active?: NavKey; workspace: ShellWorkspace; children: ReactNode }) {
   const current = workspace.locations.find((l) => l.id === workspace.currentLocationId) ?? workspace.locations[0];
   const initial = (workspace.user.name ?? workspace.user.email).slice(0, 1).toUpperCase();
@@ -61,23 +63,7 @@ export function AppShell({ t, locale, active, workspace, children }: { t: Dictio
 
       <nav aria-label={t.nav.workspace} className="grid gap-0.5">
         <p className="px-3 pb-2 text-overline font-semibold tracking-[0.11em] text-muted uppercase">{t.nav.workspace}</p>
-        {NAV.map((item) => {
-          const on = item.key === active;
-          return (
-            <Link
-              key={item.key}
-              href={`/${locale}${item.path}`}
-              aria-current={on ? 'page' : undefined}
-              className={cx(
-                'flex items-center rounded-[9px] px-3 py-2.5 text-body-s font-medium transition-colors',
-                on ? 'bg-brand-soft text-brand shadow-[inset_3px_0_0_var(--brand)] rtl:shadow-[inset_-3px_0_0_var(--brand)]' : 'text-muted hover:bg-surface-2 hover:text-ink',
-              )}
-            >
-              {t.nav[item.key]}
-              {item.isNew && <span className="ms-auto rounded-full bg-brand-fill px-2 py-0.5 text-[10px] font-semibold text-white">{t.nav.new}</span>}
-            </Link>
-          );
-        })}
+        <AppNav links={NAV.map((item) => ({ key: item.key, href: `/${locale}${item.path}`, label: t.nav[item.key], badge: item.isNew ? t.nav.new : undefined }))} locale={locale} active={active} />
         {workspace.user.staff && (
           <Link href={`/${locale}/staff`} className="mt-2 flex items-center rounded-[9px] border border-dashed border-line-2 px-3 py-2.5 text-body-s font-medium text-muted hover:text-ink">
             {t.nav.staff}

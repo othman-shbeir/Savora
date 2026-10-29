@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import { PageToggles } from '@/components/page-toggles';
 import { SignOutButton } from '@/components/sign-out-button';
 import { StaffBilling, type StaffData } from '@/components/staff/staff-billing';
 import { Overline } from '@/components/ui/card';
@@ -24,11 +25,12 @@ export default async function StaffPage() {
 
   return (
     <div className="min-h-dvh bg-bg">
-      <header className="flex items-center justify-between border-b border-line bg-surface px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-line bg-surface px-6 py-4">
         <Link href={`/${locale}/app`}>
           <Logo width={96} />
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+          <PageToggles locale={locale} labels={t.common} />
           <span className="rounded-full border border-dashed border-line-2 px-3 py-1 text-caption font-semibold text-muted">{t.nav.staff}</span>
           <SignOutButton label={t.shell.signOut} locale={locale} />
         </div>

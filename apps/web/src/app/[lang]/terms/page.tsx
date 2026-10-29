@@ -11,5 +11,5 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Page() {
   const [t, locale] = await Promise.all([getDictionary(), getLocale()]);
   const email = process.env.SUPPORT_EMAIL;
-  return <LegalPage doc={TERMS[locale]} locale={locale} languageLabel={t.common.language} contact={email ? { label: t.legal.contact, email } : null} />;
+  return <LegalPage doc={TERMS[locale]} locale={locale} labels={t.common} contact={email ? { label: t.legal.contact, email } : null} />;
 }

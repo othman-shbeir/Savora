@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { fill, type Locale } from '@savora/shared';
 import { LEGAL_UPDATED } from '@/content/legal';
-import { LocaleSwitch } from '../locale-switch';
+import type { Dictionary } from '@/app/[lang]/dictionaries';
+import { PageToggles } from '../page-toggles';
 import { Logo } from '../ui/logo';
 
 type Doc = { title: string; lead: string; updated: string; sections: Array<{ heading: string; body: string[] }> };
 
 /** Privacy and Terms: one readable column, with contact details when SUPPORT_EMAIL is set. */
-export function LegalPage({ doc, locale, languageLabel, contact }: { doc: Doc; locale: Locale; languageLabel: string; contact: { label: string; email: string } | null }) {
+export function LegalPage({ doc, locale, labels, contact }: { doc: Doc; locale: Locale; labels: Dictionary['common']; contact: { label: string; email: string } | null }) {
   const date = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-u-nu-latn' : 'en', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(LEGAL_UPDATED));
   return (
     <div className="min-h-dvh">
@@ -15,7 +16,7 @@ export function LegalPage({ doc, locale, languageLabel, contact }: { doc: Doc; l
         <Link href={`/${locale}`}>
           <Logo width={104} />
         </Link>
-        <LocaleSwitch current={locale} label={languageLabel} />
+        <PageToggles locale={locale} labels={labels} />
       </header>
       <main id="main" className="mx-auto max-w-3xl px-5 pt-8 pb-20">
         <h1 className="text-heading-xl font-semibold tracking-[-0.03em]">{doc.title}</h1>

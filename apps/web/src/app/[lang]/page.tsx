@@ -7,7 +7,7 @@ import { Hero } from '@/components/landing/hero';
 import { How } from '@/components/landing/how';
 import { Places } from '@/components/landing/places';
 import { Pricing } from '@/components/landing/pricing';
-import { LocaleSwitch } from '@/components/locale-switch';
+import { PageToggles } from '@/components/page-toggles';
 import { Logo } from '@/components/ui/logo';
 import { getMe, getPublicMenu } from '@/lib/api';
 import { jsonLdText } from '@/lib/menu-jsonld';
@@ -66,7 +66,7 @@ export default async function Home() {
             </a>
           </nav>
           <div className="flex items-center justify-end gap-2">
-            <LocaleSwitch current={locale} label={t.common.language} />
+            <PageToggles locale={locale} labels={t.common} />
             {!signedIn && (
               <Link href={`/${locale}/sign-in`} className="hidden rounded-[10px] px-4 py-3 text-[14px] font-semibold whitespace-nowrap text-ink hover:text-brand md:inline-flex">
                 {l.nav.signIn}

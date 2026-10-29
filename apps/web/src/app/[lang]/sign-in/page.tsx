@@ -3,7 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { EmailSignIn } from '@/components/auth/email-sign-in';
-import { LocaleSwitch } from '@/components/locale-switch';
+import { PageToggles } from '@/components/page-toggles';
 import { Logo } from '@/components/ui/logo';
 import { getMe } from '@/lib/api';
 import { getDictionary, getLocale } from '../dictionaries';
@@ -53,7 +53,7 @@ export default async function SignInPage({ searchParams }: PageProps<'/[lang]/si
           <span className="lg:invisible">
             <Logo width={104} />
           </span>
-          <LocaleSwitch current={locale} label={t.common.language} />
+          <PageToggles locale={locale} labels={t.common} />
         </div>
 
         <div className="flex flex-1 items-center justify-center py-10">

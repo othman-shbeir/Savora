@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { OnboardingForm } from '@/components/onboarding-form';
+import { PageToggles } from '@/components/page-toggles';
 import { SignOutButton } from '@/components/sign-out-button';
 import { Overline } from '@/components/ui/card';
 import { Logo } from '@/components/ui/logo';
@@ -21,7 +22,8 @@ export default async function WelcomePage() {
       {/* Someone who never creates a workspace (or Savora staff) can still leave or reach the back office. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Logo width={112} />
-        <div className="flex items-center gap-4 text-caption text-muted">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-caption text-muted">
+          <PageToggles locale={locale} labels={t.common} />
           {me.user.staff && (
             <Link href={`/${locale}/staff`} className="font-semibold text-ink-2 hover:text-ink">
               {t.nav.staff}

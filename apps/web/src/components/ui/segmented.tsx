@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { cx } from '@/lib/cx';
 
-type Option = { value: string; label: string };
+/** With an `icon`, the option shows only the icon and `label` becomes its accessible name and tooltip. */
+type Option = { value: string; label: string; icon?: ReactNode };
 
 /** A single-choice control announced as a radio group. Arrow keys move between options
  *  and follow the reading direction, so in Arabic the left arrow moves forward. */
@@ -52,12 +53,16 @@ export function Segmented({
           tabIndex={current === o.value ? 0 : -1}
           onClick={() => select(o.value)}
           onKeyDown={(e) => onKeyDown(e, i)}
+          aria-label={o.icon ? o.label : undefined}
+          title={o.icon ? o.label : undefined}
           className={cx(
-            'rounded-full px-3.5 py-1.5 text-caption font-semibold transition-colors',
+            'rounded-full py-1.5 text-caption font-semibold transition-colors',
+            // Icon options match the height of text ones, so the control lines up with LocaleSwitch.
+            o.icon ? 'grid h-[30px] w-7 place-items-center py-0' : 'px-3.5',
             current === o.value ? 'bg-surface text-ink shadow-[0_1px_3px_rgb(36_36_36/0.12)]' : 'text-muted hover:text-ink',
           )}
         >
-          {o.label}
+          {o.icon ?? o.label}
         </button>
       ))}
     </div>

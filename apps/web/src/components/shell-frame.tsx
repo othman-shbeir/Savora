@@ -5,7 +5,7 @@ import { cx } from '@/lib/cx';
 
 /** Lays out the sidebar and page. On phones the sidebar becomes a drawer behind a menu button;
  *  it slides in from the start edge (left in English, right in Arabic). */
-export function ShellFrame({ sidebar, logo, labels, children }: { sidebar: ReactNode; logo: ReactNode; labels: { menu: string; close: string }; children: ReactNode }) {
+export function ShellFrame({ sidebar, logo, toolbar, labels, children }: { sidebar: ReactNode; logo: ReactNode; toolbar?: ReactNode; labels: { menu: string; close: string }; children: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -54,7 +54,12 @@ export function ShellFrame({ sidebar, logo, labels, children }: { sidebar: React
         {sidebar}
       </aside>
 
-      <main className="min-w-0 px-5 py-8 sm:px-10 lg:px-[53px] lg:py-12">{children}</main>
+      <div className="min-w-0">
+        {/* Page-wide controls (language, theme) in a bar across the top of the page. It scrolls
+            away with the page rather than sticking, so it never covers a page's own sticky bar. */}
+        {toolbar && <div className="flex flex-wrap items-center justify-end gap-2 border-b border-line px-5 py-3 sm:px-10 lg:px-[53px]">{toolbar}</div>}
+        <main className="min-w-0 px-5 py-8 sm:px-10 lg:px-[53px] lg:py-12">{children}</main>
+      </div>
     </div>
   );
 }

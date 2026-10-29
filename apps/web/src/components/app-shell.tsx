@@ -6,6 +6,7 @@ import { cx } from '@/lib/cx';
 import type { LocationOption } from '@/lib/workspace';
 import { AppNav } from './app-nav';
 import { LocationSwitcher } from './location-switcher';
+import { PageToggles } from './page-toggles';
 import { ShellFrame } from './shell-frame';
 import { SignOutButton } from './sign-out-button';
 import { Logo } from './ui/logo';
@@ -93,7 +94,7 @@ export function AppShell({ t, locale, active, workspace, children }: { t: Dictio
   );
 
   return (
-    <ShellFrame sidebar={sidebar} logo={<Logo width={96} />} labels={{ menu: t.shell.menu, close: t.shell.close }}>
+    <ShellFrame sidebar={sidebar} logo={<Logo width={96} />} toolbar={<PageToggles locale={locale} labels={t.common} />} labels={{ menu: t.shell.menu, close: t.shell.close }}>
       {children}
     </ShellFrame>
   );

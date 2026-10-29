@@ -12,6 +12,9 @@
   --muted: #6b6b6b;
   --line: #e7e7e7;
   --line-2: #d8d8d8;
+  /* Segmented controls: the track, and the raised pill on it. */
+  --segment: var(--line);
+  --segment-on: var(--surface);
   --brand: #db1a1a;
   --brand-hover: #b81414;
   --brand-soft: #fef3f3;
@@ -40,6 +43,8 @@
     --muted: #9a9a9a;
     --line: #2d2d2d;
     --line-2: #3a3a3a;
+    --segment: var(--bg);
+    --segment-on: var(--line-2);
     --brand: #ff4d4d;
     --brand-hover: #ff6e6e;
     --brand-soft: #2c1717;
@@ -65,6 +70,8 @@
   --muted: #9a9a9a;
   --line: #2d2d2d;
   --line-2: #3a3a3a;
+  --segment: var(--bg);
+  --segment-on: var(--line-2);
   --brand: #ff4d4d;
   --brand-hover: #ff6e6e;
   --brand-soft: #2c1717;
@@ -89,6 +96,8 @@
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-line-2: var(--line-2);
+  --color-segment: var(--segment);
+  --color-segment-on: var(--segment-on);
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
   --color-brand-soft: var(--brand-soft);

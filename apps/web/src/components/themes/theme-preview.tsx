@@ -27,6 +27,8 @@ const GUEST = {
 
 export const ICON = {
   check: <polyline points="20 6 9 17 4 12" />,
+  back: <polyline points="15 18 9 12 15 6" />,
+  forward: <polyline points="9 18 15 12 9 6" />,
   lock: (
     <>
       <rect x="5" y="11" width="14" height="10" rx="2" />

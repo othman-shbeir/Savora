@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fill, plansEnabled, rank, type Locale, type Photo, type PlanId, type ThemeEntry, type ThemesOverview, type ThemeTag } from '@savora/shared';
 import type { Dictionary } from '@/app/[lang]/dictionaries';
 import { send } from '@/lib/client-api';
@@ -22,7 +22,7 @@ type Filter = 'all' | ThemeTag;
 type Assets = { logo: Photo | null; cover: Photo | null };
 const NO_ASSETS: Assets = { logo: null, cover: null };
 
-/** Menu themes: the gallery (plan-gated), the Theme assistant, and a live preview of the guest menu. */
+/** Menu themes: a live preview of the guest menu first, with the gallery slider (plan-gated) or the Theme assistant beside it. */
 export function ThemesScreen({
   data,
   t,
@@ -65,6 +65,9 @@ export function ThemesScreen({
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const [deleting, setDeleting] = useState<ThemeEntry | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const rail = useRef<HTMLUListElement>(null);
+  const [edges, setEdges] = useState({ back: false, forward: false });
+  const rtl = locale === 'ar';
 
   const selected = all.find((e) => e.ref === selectedRef) ?? data.presets[0]!;
   const look: Look = draft ?? selected;
@@ -150,7 +153,7 @@ export function ThemesScreen({
     { p: 'multi_location', price: th.multiPrice, line: th.multiLine },
   ];
   const planStrip = (
-    <ul aria-label={th.planStrip} className="mt-6 grid gap-1.5 rounded-[18px] border border-line bg-surface-2 p-1.5 md:grid-cols-3">
+    <ul aria-label={th.planStrip} className="mt-3 grid gap-1.5 rounded-[18px] border border-line bg-surface-2 p-1.5 md:grid-cols-3">
       {tiers.map(({ p, price, line }) => {
         // While plans are switched off for testing, everything is included.
         const state = p === data.plan ? 'current' : rank(p) < rank(data.plan) || !plansEnabled() ? 'included' : 'locked';
@@ -180,9 +183,12 @@ export function ThemesScreen({
       role="tab"
       aria-selected={tab === key}
       onClick={() => setTab(key)}
-      className={cx('inline-flex items-center gap-2 rounded-[9px] px-3.5 py-2 text-body-s font-semibold transition-colors', tab === key ? 'bg-surface text-ink shadow-[0_1px_3px_rgb(36_36_36/0.12)]' : 'text-muted hover:text-ink')}
+      className={cx(
+        'inline-flex flex-1 items-center justify-center gap-2 rounded-[9px] px-3.5 py-2 text-body-s font-semibold transition-[background-color,color,box-shadow] sm:flex-none',
+        tab === key ? 'bg-segment-on text-ink shadow-[0_1px_2px_rgb(36_36_36/0.1),0_2px_8px_rgb(36_36_36/0.08)]' : 'text-ink-2 hover:text-ink',
+      )}
     >
-      {icon}
+      <span className={cx('transition-colors', tab === key ? 'text-brand' : 'text-muted')}>{icon}</span>
       {label}
       {locked && <Icon d={ICON.lock} size={12} strokeWidth={2.2} />}
     </button>
@@ -195,27 +201,74 @@ export function ThemesScreen({
     ['bold', th.filterBold],
   ];
   const shown = all.filter((e) => filter === 'all' || e.tags.includes(filter));
+  const position = draft ? -1 : shown.findIndex((e) => e.ref === selectedRef);
+
+  // ---------- Slider ----------
+  const pick = (ref: string) => {
+    setDraft(null);
+    setSelectedRef(ref);
+  };
+  /** Moves the selection along the slider (wrapping), so the preview shows the next look. */
+  function step(by: 1 | -1, focus = false) {
+    if (!shown.length) return;
+    const next = shown[position < 0 ? 0 : (position + by + shown.length) % shown.length]!;
+    pick(next.ref);
+    if (focus) rail.current?.querySelector<HTMLButtonElement>(`[data-ref="${CSS.escape(next.ref)}"]`)?.focus();
+  }
+  // Which way the slider can still scroll; scrollLeft runs negative in RTL, so only its size counts.
+  const measure = () => {
+    const r = rail.current;
+    if (!r) return;
+    const at = Math.abs(r.scrollLeft);
+    setEdges({ back: at > 4, forward: at + r.clientWidth < r.scrollWidth - 4 });
+  };
+  const page = (by: 1 | -1) => {
+    const r = rail.current;
+    if (r) r.scrollBy({ left: by * (rtl ? -1 : 1) * r.clientWidth * 0.8, behavior: 'smooth' });
+  };
+  // Keep the chosen theme in view. Only the slider scrolls sideways; the page never jumps to it.
+  useEffect(() => {
+    const r = rail.current;
+    const el = r?.querySelector(`[data-ref="${CSS.escape(selectedRef)}"]`);
+    if (r && el) {
+      const rb = r.getBoundingClientRect();
+      const eb = el.getBoundingClientRect();
+      if (eb.left < rb.left) r.scrollBy({ left: eb.left - rb.left - 18, behavior: 'smooth' });
+      else if (eb.right > rb.right) r.scrollBy({ left: eb.right - rb.right + 18, behavior: 'smooth' });
+    }
+    measure();
+  }, [selectedRef, filter, tab]);
+  useEffect(() => {
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+  const onRailKey = (ev: React.KeyboardEvent) => {
+    if (!(ev.target as HTMLElement).dataset.ref) return;
+    const keys: Record<string, 1 | -1> = rtl ? { ArrowLeft: 1, ArrowRight: -1 } : { ArrowRight: 1, ArrowLeft: -1 };
+    if (keys[ev.key]) {
+      ev.preventDefault();
+      step(keys[ev.key]!, true);
+    }
+  };
 
   // ---------- Theme card ----------
   const themeCard = (e: ThemeEntry) => {
     const on = !draft && e.ref === selectedRef;
     const inUse = e.ref === data.selectedRef;
     return (
-      <li key={e.ref} className="relative">
+      <li key={e.ref} className="relative w-[176px] shrink-0 snap-start sm:w-[196px]">
         <button
           type="button"
+          data-ref={e.ref}
           aria-pressed={on}
-          onClick={() => {
-            setDraft(null);
-            setSelectedRef(e.ref);
-          }}
+          onClick={() => pick(e.ref)}
           className={cx(
-            'block w-full rounded-2xl bg-surface p-2 pb-3 text-start transition-shadow',
-            on ? 'shadow-[0_0_0_2px_var(--brand),0_10px_24px_rgb(219_26_26/0.12)]' : 'border border-line shadow-card hover:border-line-2',
+            'block w-full rounded-2xl bg-surface p-2 pb-3 text-start transition-[box-shadow,transform] duration-200',
+            on ? 'shadow-[0_0_0_2px_var(--brand),0_10px_24px_rgb(219_26_26/0.14)]' : 'border border-line shadow-card hover:-translate-y-0.5 hover:border-line-2',
           )}
         >
           <span className="relative block">
-            <MiniTheme colors={e.colors} />
+            <MiniTheme colors={e.colors} height={104} />
             {!e.allowed && (
               <>
                 <span className="absolute inset-0 rounded-xl bg-[rgb(245_245_245/0.55)] dark:bg-[rgb(20_20_20/0.45)]" />
@@ -229,15 +282,15 @@ export function ThemesScreen({
                 <Icon d={ICON.check} size={12} strokeWidth={3} />
               </span>
             )}
+            {inUse && (
+              <span className="absolute start-2 bottom-2 rounded-full bg-ink px-2 py-0.5 text-[10px] font-semibold text-surface">{th.inUse}</span>
+            )}
           </span>
           <span className="mx-1 mt-2.5 flex items-start justify-between gap-2">
-            <span className="min-w-0">
-              <span className={cx('block truncate text-title-s font-semibold', !e.allowed && 'text-ink-2')}>{name(e)}</span>
-              <span className="block truncate text-caption text-muted">{inUse ? th.inUse : locale === 'ar' ? e.descAr : e.descEn}</span>
-            </span>
+            <span className={cx('min-w-0 truncate text-title-s font-semibold', !e.allowed && 'text-ink-2')}>{name(e)}</span>
             {tierBadge(e)}
           </span>
-          <span aria-hidden className="mx-1 mt-2.5 flex gap-1">
+          <span aria-hidden className="mx-1 mt-2 flex gap-1">
             {[e.colors.primary, e.colors.accent, e.colors.ink, e.colors.bg].map((h, i) => (
               <span key={i} className="block h-1.5 flex-1 rounded-[3px] shadow-[inset_0_0_0_1px_rgb(0_0_0/0.06)]" style={{ background: h }} />
             ))}
@@ -248,7 +301,7 @@ export function ThemesScreen({
             type="button"
             onClick={() => setDeleting(e)}
             aria-label={`${th.delete} · ${name(e)}`}
-            className="absolute end-3 bottom-[52px] grid size-7 place-items-center rounded-lg bg-surface/90 text-muted shadow-sm hover:text-brand"
+            className="absolute start-3.5 top-3.5 grid size-7 place-items-center rounded-lg bg-surface/90 text-muted shadow-sm hover:text-brand"
           >
             <Icon d={ICON.trash} size={14} />
           </button>
@@ -257,7 +310,7 @@ export function ThemesScreen({
     );
   };
 
-  // ---------- Preview column ----------
+  // ---------- Side cards ----------
   const shareCard =
     data.locations > 1 || !data.canShare ? (
       <Card className="flex items-start gap-3 p-4">
@@ -279,10 +332,25 @@ export function ThemesScreen({
       </Card>
     ) : null;
 
-  const previewCard = (
-    <Card className="p-[18px]">
-      <div className="flex items-center justify-between gap-3">
-        <Overline>{th.livePreview}</Overline>
+  // ---------- Live preview ----------
+  const arrow = (by: 1 | -1) => (
+    <button
+      type="button"
+      onClick={() => step(by)}
+      aria-label={by < 0 ? th.prevTheme : th.nextTheme}
+      title={by < 0 ? th.prevTheme : th.nextTheme}
+      className="grid size-10 shrink-0 place-items-center rounded-full bg-surface text-ink shadow-[0_4px_14px_rgb(0_0_0/0.14)] ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-95"
+    >
+      <Icon d={by < 0 ? ICON.back : ICON.forward} size={18} strokeWidth={2.4} className="rtl:-scale-x-100" />
+    </button>
+  );
+  const stage = (
+    <Card aria-label={th.livePreview} className="overflow-hidden lg:sticky lg:top-6">
+      <div className="flex items-center justify-between gap-3 px-[18px] pt-4 pb-3">
+        <span className="flex items-center gap-2">
+          <span aria-hidden className="size-2 rounded-full bg-ok shadow-[0_0_0_3px_var(--ok-soft)]" />
+          <Overline>{th.livePreview}</Overline>
+        </span>
         <Segmented
           label={th.previewLanguage}
           value={lang}
@@ -293,14 +361,34 @@ export function ThemesScreen({
           ]}
         />
       </div>
-      <div className="mt-4">
-        <PhonePreview look={look} data={withAssets} lang={lang} />
+      {/* The stage takes on the theme's own background, so the phone sits in its mood. */}
+      <div className="px-3 py-6 transition-colors duration-300" style={{ background: `color-mix(in srgb, ${look.colors.bg} 72%, var(--surface-2))` }}>
+        <div className="flex items-center justify-center gap-2 sm:gap-4">
+          {tab === 'gallery' && arrow(-1)}
+          <div className="min-w-0 max-w-[272px] flex-1">
+            <PhonePreview look={look} data={withAssets} lang={lang} />
+          </div>
+          {tab === 'gallery' && arrow(1)}
+        </div>
       </div>
-      <div className="my-4 h-px bg-line" />
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-title-m font-semibold">{draft ? name(draft) : name(selected)}</span>
-        {draft ? tierBadge({ tier: 'custom', allowed: true }) : tierBadge(selected)}
+      <div className="flex items-center justify-between gap-3 border-t border-line px-[18px] py-4">
+        <span className="min-w-0">
+          <span aria-live="polite" className="block truncate text-title-m font-semibold">
+            {name(draft ?? selected)}
+          </span>
+          <span className="block truncate text-caption text-muted">{draft ? th.tabAssistant : selected.ref === data.selectedRef ? th.inUse : locale === 'ar' ? selected.descAr : selected.descEn}</span>
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-1">
+          {draft ? tierBadge({ tier: 'custom', allowed: true }) : tierBadge(selected)}
+          {position >= 0 && <span className="text-[11px] text-muted tabular-nums">{fill(th.position, { i: position + 1, n: shown.length })}</span>}
+        </span>
       </div>
+    </Card>
+  );
+
+  const coloursCard = (
+    <Card className="p-[18px]">
+      <Overline>{th.colours}</Overline>
       <TokenRow look={look} t={th} />
     </Card>
   );
@@ -343,17 +431,60 @@ export function ThemesScreen({
     </Button>
   );
 
+  const scrollButton = (by: 1 | -1) => (
+    <button
+      type="button"
+      onClick={() => page(by)}
+      disabled={by < 0 ? !edges.back : !edges.forward}
+      aria-label={by < 0 ? th.scrollBack : th.scrollForward}
+      className="grid size-8 place-items-center rounded-full border border-line-2 text-ink-2 transition-colors hover:border-ink hover:text-ink disabled:pointer-events-none disabled:opacity-35"
+    >
+      <Icon d={by < 0 ? ICON.back : ICON.forward} size={15} strokeWidth={2.4} className="rtl:-scale-x-100" />
+    </button>
+  );
   const gallery = (
-    <div className="min-w-0">
-      {!data.canDesign && <AssistantTeaser t={th} billing={billing} />}
-      <ul aria-label={th.tabGallery} className={cx('grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-3', !data.canDesign && 'mt-[18px]')}>{shown.map(themeCard)}</ul>
+    <Card className="min-w-0 p-[18px]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="group" aria-label={th.filters} className="flex flex-wrap gap-1.5">
+          {filters.map(([f, label]) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+              className={cx('rounded-full px-3 py-1.5 text-caption font-semibold transition-colors', filter === f ? 'bg-ink text-surface' : 'border border-line-2 text-ink-2 hover:border-ink')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="hidden gap-1.5 sm:flex">
+          {scrollButton(-1)}
+          {scrollButton(1)}
+        </div>
+      </div>
+      <div className="relative -mx-[18px] mt-3">
+        <ul
+          ref={rail}
+          aria-label={th.tabGallery}
+          onScroll={measure}
+          onKeyDown={onRailKey}
+          className="flex snap-x snap-mandatory scroll-px-[18px] gap-3 overflow-x-auto px-[18px] pt-1.5 pb-3 [scrollbar-width:thin]"
+        >
+          {shown.map(themeCard)}
+        </ul>
+        {/* Soft edges where more themes wait off-screen. */}
+        <span aria-hidden className={cx('pointer-events-none absolute inset-y-0 start-0 w-8 bg-linear-to-r from-surface to-transparent transition-opacity rtl:bg-linear-to-l', edges.back ? 'opacity-100' : 'opacity-0')} />
+        <span aria-hidden className={cx('pointer-events-none absolute inset-y-0 end-0 w-8 bg-linear-to-l from-surface to-transparent transition-opacity rtl:bg-linear-to-r', edges.forward ? 'opacity-100' : 'opacity-0')} />
+      </div>
+      <p className="mt-1 text-caption text-muted">{th.sliderHint}</p>
       {lockedCount > 0 && (
-        <p className="mt-3.5 flex items-center gap-2 text-caption text-muted">
+        <p className="mt-2 flex items-center gap-2 text-caption text-muted">
           <Icon d={ICON.lock} size={13} className="shrink-0" />
           {fill(th.lockedNote, { n: lockedCount })}
         </p>
       )}
-    </div>
+    </Card>
   );
 
   return (
@@ -376,73 +507,62 @@ export function ThemesScreen({
       </header>
       {!canEdit && <p className="mt-3 text-caption text-muted">{th.editorsNote}</p>}
 
-      {planStrip}
-
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" aria-label={th.tabs} className="inline-flex rounded-xl border border-line bg-surface-2 p-1">
-          {tabButton('gallery', th.tabGallery, <Icon d={ICON.grid} size={14} />)}
-          {tabButton('assistant', th.tabAssistant, <Icon d={ICON.spark} size={14} className={data.canDesign && tab === 'assistant' ? 'text-brand' : undefined} />, !data.canDesign)}
-        </div>
-        {tab === 'gallery' && (
-          <div role="group" aria-label={th.filters} className="flex flex-wrap gap-1.5">
-            {filters.map(([f, label]) => (
-              <button
-                key={f}
-                type="button"
-                aria-pressed={filter === f}
-                onClick={() => setFilter(f)}
-                className={cx('rounded-full px-3 py-1.5 text-caption font-semibold transition-colors', filter === f ? 'bg-ink text-surface' : 'border border-line-2 text-ink-2 hover:border-ink')}
-              >
-                {label}
-              </button>
-            ))}
+      <div className="mt-6 grid items-start gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+        {stage}
+        <div className="grid min-w-0 gap-4">
+          <div role="tablist" aria-label={th.tabs} className="flex rounded-xl border border-line bg-segment p-1 sm:inline-flex sm:justify-self-start">
+            {tabButton('gallery', th.tabGallery, <Icon d={ICON.grid} size={14} />)}
+            {tabButton('assistant', th.tabAssistant, <Icon d={ICON.spark} size={14} />, !data.canDesign)}
           </div>
-        )}
-      </div>
-
-      <div className="mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        {tab === 'gallery' ? (
-          gallery
-        ) : !data.canDesign ? (
-          <AssistantTeaser t={th} billing={billing} />
-        ) : !data.aiAvailable ? (
-          <Card className="p-6">
-            <span className="grid size-9 place-items-center rounded-[11px] bg-brand-soft text-brand">
-              <Icon d={ICON.spark} size={17} />
-            </span>
-            <h2 className="mt-3 text-title-m font-semibold">{th.assistant.unavailableTitle}</h2>
-            <p className="mt-1 max-w-md text-body-s text-muted">{th.assistant.unavailableBody}</p>
-          </Card>
-        ) : (
-          <ThemeAssistant
-            t={th}
-            locale={locale}
-            orgId={orgId}
-            locationId={locationId}
-            userName={userName}
-            placeName={(locale === 'ar' && preview.name.ar) || preview.name.en}
-            canSave={canEdit}
-            draft={draft}
-            onPreview={(d) => {
-              setDraft(d);
-              // A new pick replaces the old one; an answer that picked nothing keeps what's there.
-              // Starting over (no draft) drops them.
-              setAssets((x) => (d ? { logo: d.logo ?? x.logo, cover: d.cover ?? x.cover } : NO_ASSETS));
-            }}
-            onSaved={(ref) => {
-              setDraft(null);
-              setSelectedRef(ref);
-              say(th.assistant.saved);
-              router.refresh();
-            }}
-          />
-        )}
-        <div className="grid gap-4">
-          {previewCard}
+          {tab === 'gallery' ? (
+            gallery
+          ) : !data.canDesign ? (
+            <AssistantTeaser t={th} billing={billing} />
+          ) : !data.aiAvailable ? (
+            <Card className="p-6">
+              <span className="grid size-9 place-items-center rounded-[11px] bg-brand-soft text-brand">
+                <Icon d={ICON.spark} size={17} />
+              </span>
+              <h2 className="mt-3 text-title-m font-semibold">{th.assistant.unavailableTitle}</h2>
+              <p className="mt-1 max-w-md text-body-s text-muted">{th.assistant.unavailableBody}</p>
+            </Card>
+          ) : (
+            <ThemeAssistant
+              t={th}
+              locale={locale}
+              orgId={orgId}
+              locationId={locationId}
+              userName={userName}
+              placeName={(locale === 'ar' && preview.name.ar) || preview.name.en}
+              canSave={canEdit}
+              draft={draft}
+              onPreview={(d) => {
+                setDraft(d);
+                // A new pick replaces the old one; an answer that picked nothing keeps what's there.
+                // Starting over (no draft) drops them.
+                setAssets((x) => (d ? { logo: d.logo ?? x.logo, cover: d.cover ?? x.cover } : NO_ASSETS));
+              }}
+              onSaved={(ref) => {
+                setDraft(null);
+                setSelectedRef(ref);
+                say(th.assistant.saved);
+                router.refresh();
+              }}
+            />
+          )}
           {assetsCard}
+          {coloursCard}
           {shareCard}
+          {tab === 'gallery' && !data.canDesign && <AssistantTeaser t={th} billing={billing} />}
         </div>
       </div>
+
+      <section aria-labelledby="theme-plans-h" className="mt-10">
+        <h2 id="theme-plans-h" className="text-title-m font-semibold">
+          {th.planStrip}
+        </h2>
+        {planStrip}
+      </section>
 
       <Dialog
         open={Boolean(deleting)}
